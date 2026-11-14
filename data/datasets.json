@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "datasets": [
+    {
+      "id": "donki_cme", "phase": "D", "source": "NASA DONKI (CCMC)",
+      "name": "Eyecciones de masa coronal (CME)",
+      "description": "Eventos de CME detectados y analizados por el centro CCMC de NASA.",
+      "info_type": "Clima espacial",
+      "url_original": "https://ccmc.gsfc.nasa.gov/tools/DONKI/",
+      "endpoint": "https://api.nasa.gov/DONKI/CME",
+      "format": "JSON",
+      "license": "Datos abiertos de la NASA (api.nasa.gov)",
+      "attribution": "NASA / GSFC / CCMC - DONKI"
+    },
+    {
+      "id": "donki_flr", "phase": "D", "source": "NASA DONKI (CCMC)",
+      "name": "Llamaradas solares (FLR)",
+      "description": "Llamaradas solares con clase (A, B, C, M, X), pico y región activa.",
+      "info_type": "Clima espacial",
+      "url_original": "https://ccmc.gsfc.nasa.gov/tools/DONKI/",
+      "endpoint": "https://api.nasa.gov/DONKI/FLR",
+      "format": "JSON",
+      "license": "Datos abiertos de la NASA (api.nasa.gov)",
+      "attribution": "NASA / GSFC / CCMC - DONKI"
+    },
+    {
+      "id": "donki_gst", "phase": "D", "source": "NASA DONKI (CCMC)",
+      "name": "Tormentas geomagnéticas (GST)",
+      "description": "Tormentas geomagnéticas con indice Kp observado.",
+      "info_type": "Clima espacial",
+      "url_original": "https://ccmc.gsfc.nasa.gov/tools/DONKI/",
+      "endpoint": "https://api.nasa.gov/DONKI/GST",
+      "format": "JSON",
+      "license": "Datos abiertos de la NASA (api.nasa.gov)",
+      "attribution": "NASA / GSFC / CCMC - DONKI"
+    },
+    {
+      "id": "donki_sep", "phase": "D", "source": "NASA DONKI (CCMC)",
+      "name": "Partículas energéticas solares (SEP)",
+      "description": "Eventos de partículas solares energeticas: riesgo de radiación para astronautas.",
+      "info_type": "Clima espacial",
+      "url_original": "https://ccmc.gsfc.nasa.gov/tools/DONKI/",
+      "endpoint": "https://api.nasa.gov/DONKI/SEP",
+      "format": "JSON",
+      "license": "Datos abiertos de la NASA (api.nasa.gov)",
+      "attribution": "NASA / GSFC / CCMC - DONKI"
+    },
+    {
+      "id": "donki_wsa", "phase": "D", "source": "NASA DONKI (CCMC)",
+      "name": "Simulaciones WSA-Enlil",
+      "description": "Simulaciones del viento solar. Son resultados de modelo, no mediciones.",
+      "info_type": "Modelo / simulación",
+      "url_original": "https://ccmc.gsfc.nasa.gov/tools/DONKI/",
+      "endpoint": "https://api.nasa.gov/DONKI/WSAEnlilSimulations",
+      "format": "JSON",
+      "license": "Datos abiertos de la NASA (api.nasa.gov)",
+      "attribution": "NASA / GSFC / CCMC - DONKI"
+    },
+    {
+      "id": "donki_notifications", "phase": "D", "source": "NASA DONKI (CCMC)",
+      "name": "Notificaciones de clima espacial",
+      "description": "Avisos y alertas emitidos por el CCMC.",
+      "info_type": "Clima espacial",
+      "url_original": "https://ccmc.gsfc.nasa.gov/tools/DONKI/",
+      "endpoint": "https://api.nasa.gov/DONKI/notifications",
+      "format": "JSON",
+      "license": "Datos abiertos de la NASA (api.nasa.gov)",
+      "attribution": "NASA / GSFC / CCMC - DONKI"
+    },
+    {
+      "id": "gibs_modis_truecolor", "phase": "D", "source": "NASA GIBS / Worldview",
+      "name": "MODIS Terra - Color verdadero",
+      "description": "Imagen diaria real de la Tierra (Terra/MODIS corregida por reflectancia).",
+      "info_type": "Observación de la Tierra",
+      "url_original": "https://worldview.earthdata.nasa.gov/",
+      "endpoint": "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi",
+      "format": "WMS (JPEG)",
+      "license": "Datos abiertos de NASA EOSDIS; citar NASA EOSDIS GIBS",
+      "attribution": "NASA EOSDIS Global Imagery Browse Services (GIBS)"
+    },
+    {
+      "id": "gibs_viirs_truecolor", "phase": "D", "source": "NASA GIBS / Worldview",
+      "name": "VIIRS SNPP - Color verdadero (alternativa)",
+      "description": "Imagen diaria de la Tierra de VIIRS. Las fechas más recientes pueden venir vacias.",
+      "info_type": "Observación de la Tierra",
+      "url_original": "https://worldview.earthdata.nasa.gov/",
+      "endpoint": "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi",
+      "format": "WMS (JPEG)",
+      "license": "Datos abiertos de NASA EOSDIS; citar NASA EOSDIS GIBS",
+      "attribution": "NASA EOSDIS Global Imagery Browse Services (GIBS)"
+    },
+    {
+      "id": "gibs_blackmarble", "phase": "D", "source": "NASA GIBS / Worldview",
+      "name": "VIIRS Black Marble - Luces nocturnas",
+      "description": "La Tierra de noche. Capa por defecto de GIBS, sin fecha de captura diaria.",
+      "info_type": "Observación de la Tierra",
+      "url_original": "https://worldview.earthdata.nasa.gov/",
+      "endpoint": "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi",
+      "format": "WMS (PNG)",
+      "license": "Datos abiertos de NASA EOSDIS; citar NASA EOSDIS GIBS",
+      "attribution": "NASA EOSDIS Global Imagery Browse Services (GIBS)"
+    },
+    {
+      "id": "cmr_isslis", "phase": "E", "source": "NASA Earthdata CMR",
+      "name": "ISS LIS - Sensor de rayos (ISSLIS V3)",
+      "description": "Sensor de rayos instalado en la ISS. Contexto educativo para la estación.",
+      "info_type": "Atmósfera / Sistemas espaciales",
+      "url_original": "https://search.earthdata.nasa.gov/",
+      "endpoint": "https://cmr.earthdata.nasa.gov/search/collections.json",
+      "format": "JSON (metadatos)",
+      "license": "Datos abiertos de NASA EOSDIS (GHRC DAAC)",
+      "attribution": "NASA EOSDIS / GHRC DAAC"
+    },
+    {
+      "id": "noaa_swpc", "phase": "F", "source": "NOAA SWPC (agencia aliada, EE. UU.)",
+      "name": "Índice Kp planetario y escalas NOAA",
+      "description": "Segunda fuente para contrastar la actividad geomagnética de DONKI.",
+      "info_type": "Clima espacial",
+      "url_original": "https://www.swpc.noaa.gov/",
+      "endpoint": "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json",
+      "format": "JSON",
+      "license": "Datos públicos del gobierno de EE. UU. (NOAA)",
+      "attribution": "NOAA Space Weather Prediction Center"
+    }
+  ]
+}
