@@ -9,9 +9,9 @@ const PATH := "user://ui_layout.cfg"
 ## la partida no se quede sin forma de avanzar ni de recuperar los paneles.
 const ELEMENTS := [
 	{"id": "mission", "name": "Cabecera de la misión", "can_hide": true},
-	{"id": "indicators", "name": "Cuatro indicadores", "can_hide": true},
+	{"id": "indicators", "name": "Medidores de la base", "can_hide": true},
 	{"id": "robot", "name": "Robot asistente", "can_hide": true},
-	{"id": "resources", "name": "Recursos del turno", "can_hide": true},
+	{"id": "resources", "name": "Plan de hoy", "can_hide": true},
 	{"id": "module", "name": "Panel del módulo", "can_hide": true},
 	{"id": "risks", "name": "Riesgos del turno", "can_hide": true},
 	{"id": "menu_btn", "name": "Botón Menú", "can_hide": true},

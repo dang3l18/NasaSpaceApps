@@ -9,12 +9,19 @@ extends Control
 signal data_loaded
 
 const MAP_POS := Vector2(250, 110)
-const HORIZON_Y := 235.0
+const MOON_CENTER := Vector2(110, 500)   # la Luna al fondo, a la izquierda; la base orbita a su derecha
+const MOON_RADIUS := 215.0
+const ORBIT_R := 600.0
+## Medidores de la izquierda: [id, icono, nombre, color del disco]. Solo 6, grandes y claros.
+const METERS := [
+	["vida", "💨", "Oxígeno", Color("4fc3f7")], ["agua", "💧", "Agua", Color("4f8dff")], ["energia", "⚡", "Energía", Color("ffc83d")],
+	["alimentos", "🍎", "Comida", Color("ff7a6b")], ["proteccion", "🛡️", "Protección", Color("3ddc84")], ["materiales", "🧱", "Materiales", Color("c9a46a")],
+]
 const SHORT := {"habitat": "Hábitat", "dorms": "Dormir", "common": "Común", "lab": "Laboratorio", "life_support": "Soporte vital",
 		"greenhouse": "Invernadero", "fertilization": "Abono", "infirmary": "Salud", "command": "Mando", "main_energy": "Energía",
 		"backup_energy": "Respaldo", "shelter": "Refugio", "panels": "Paneles", "processing": "Materiales"}
 const INDICATORS := [
-	["vida", "💨", "SOPORTE VITAL"], ["proteccion", "🛡", "PROTECCIÓN"], ["energia", "⚡", "ENERGÍA"], ["alimentos", "🌱", "ALIMENTOS"]]
+	["vida", "💨", "Aire"], ["proteccion", "🛡️", "Escudo"], ["energia", "⚡", "Energía"], ["alimentos", "🍎", "Comida"]]
 const PHASE_NAMES := ["inicio del día", "mitad del día", "final del día"]
 
 var s: BaseState
@@ -28,8 +35,14 @@ var _earth: ColorRect
 var _night: ColorRect
 var _sbcache := {}
 var _stars: Array = []
-var _mount: PackedVector2Array = PackedVector2Array()
-var _craters: Array = []
+var _moon: ColorRect
+var _turn_dots: Control
+var _tutorial: TutorialGuide
+var _module_panel: Control
+var _happy_until := 0   # ms: el robot esta contento hasta este momento
+var _alerts: AlertDirector      # genera las alertas espaciales (null en las pruebas automaticas)
+var _alert_ui: AlertOverlay
+var _alert_open := false
 var _modal_root: Control
 var _ind_rows := {}
 var _budget := {}
@@ -83,7 +96,19 @@ func _ready() -> void:
 	_load_data()
 	_refresh_all()
 	var skip := "--skip-intro" in OS.get_cmdline_user_args()
+	# Alertas espaciales en tiempo real: solo en partida real (no en pruebas automaticas ni con --noalerts).
+	if not _simulated and not ("--noalerts" in OS.get_cmdline_user_args()):
+		_alerts = AlertDirector.new(s)
+	if not _simulated and not ("--notutorial" in OS.get_cmdline_user_args()):
+		_build_tutorial()
 	_begin_turn(skip)
+	if _tutorial != null:
+		_tutorial.notify("start")
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--alert="):   # solo para pruebas: forzar una alerta concreta
+			var forced_ev := SpaceEvents.by_id(a.substr(8))
+			if not forced_ev.is_empty():
+				_show_space_alert(AlertDirector.instance(forced_ev, AlertDirector.difficulty_level(s), s.easy))
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--module="):
 			_select(a.substr(9))
@@ -100,7 +125,15 @@ func _process(delta: float) -> void:
 	_t += delta
 	if _earth:
 		_earth.material.set_shader_parameter("rot", _t * 0.01)
+	if _moon:
+		_moon.material.set_shader_parameter("rot", _t * 0.004)
 	_map.queue_redraw()
+	# Alertas: el reloj solo corre cuando el jugador esta planificando (sin ventanas abiertas).
+	if _alerts != null and not _alert_open and _modal_root == null and not _intro_pending and not s.finished \
+			and (_settings_root == null or not is_instance_valid(_settings_root)):
+		var ev: Dictionary = _alerts.tick(delta, s)
+		if not ev.is_empty():
+			_show_space_alert(ev)
 	# El robot salta cuando cambia su mensaje; el boton de turno late cuando se puede pulsar.
 	if _tip.text != _last_tip:
 		_last_tip = _tip.text
@@ -135,6 +168,9 @@ func _load_moon() -> void:
 	var r: Dictionary = await EarthImageryManager.get_earth("lro_wac")
 	if r.get("ok", false):
 		_moon_tex = r["texture"]
+		if _moon != null:
+			_moon.material.set_shader_parameter("earth", _moon_tex)
+			_moon.material.set_shader_parameter("has_tex", true)
 		_moon_note = "Imagen real de la Luna · mosaico LRO WAC · NASA Moon Trek"
 	_moon_done = true
 
@@ -160,45 +196,29 @@ func _check_loaded() -> void:
 
 # ---------------------------------------------------------------- TERRENO ----
 
+## La base esta en orbita alrededor de la Luna: fondo de espacio con estrellas por toda la pantalla.
 func _gen_terrain() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 20262026
-	for i in 170:
-		_stars.append([Vector2(rng.randf() * 1280.0, rng.randf() * HORIZON_Y), rng.randf_range(0.6, 1.7), rng.randf_range(0.35, 1.0)])
-	_mount.append(Vector2(0, HORIZON_Y))
-	var x := 0.0
-	while x <= 1300.0:
-		var h := 18.0 + 22.0 * absf(sin(x * 0.011)) + 14.0 * absf(sin(x * 0.037 + 1.3)) + rng.randf_range(0.0, 7.0)
-		_mount.append(Vector2(x, HORIZON_Y - h))
-		x += 24.0
-	_mount.append(Vector2(1300, HORIZON_Y))
-	for i in 16:
-		_craters.append([Vector2(rng.randf_range(20, 1260), rng.randf_range(HORIZON_Y + 30, 700)), rng.randf_range(24, 70)])
+	for i in 260:
+		_stars.append([Vector2(rng.randf() * 1280.0, rng.randf() * 720.0), rng.randf_range(0.6, 1.9), rng.randf_range(0.3, 1.0)])
 
 
 func _draw_world() -> void:
 	var w := _world
-	w.draw_rect(Rect2(0, 0, 1280, HORIZON_Y), Color("03050d"))
+	# Espacio profundo: degradado azul marino (mas claro hacia abajo, hacia la Luna).
+	for i in 18:
+		w.draw_rect(Rect2(0, i * 40.0, 1280, 41), Color("050816").lerp(Color("0d1238"), float(i) / 17.0))
 	for st in _stars:
 		w.draw_circle(st[0], st[1], Color(1, 1, 1, st[2]))
-	w.draw_colored_polygon(_mount, Color("55565e"))
-	for i in 24:
-		var y := HORIZON_Y + i * 21.0
-		var c := Color("8d8d92").darkened(i * 0.022)
-		w.draw_rect(Rect2(0, y, 1280, 22), c)
-	for c in _craters:
-		var p: Vector2 = c[0]
-		var r: float = c[1]
-		var pts := PackedVector2Array()
-		for k in 28:
-			var a := TAU * k / 28.0
-			pts.append(p + Vector2(cos(a) * r, sin(a) * r * 0.32))
-		w.draw_colored_polygon(pts, Color("6f6f75"))
-		w.draw_polyline(pts + PackedVector2Array([pts[0]]), Color("b6b6bb"), 2.0)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 7
-	for i in 260:
-		w.draw_circle(Vector2(rng.randf() * 1280.0, rng.randf_range(HORIZON_Y + 5, 720.0)), rng.randf_range(0.8, 2.2), Color(0.35, 0.35, 0.38, 0.6))
+	# Orbita de la base alrededor de la Luna (linea punteada).
+	var moon_c := MOON_CENTER
+	var k := -52.0
+	while k < 52.0:
+		var a0 := deg_to_rad(k)
+		var a1 := deg_to_rad(k + 2.2)
+		w.draw_line(moon_c + Vector2.from_angle(a0) * ORBIT_R, moon_c + Vector2.from_angle(a1) * ORBIT_R, Color("e8b730", 0.65), 2.5)
+		k += 4.4
 
 
 # --------------------------------------------------------------- MAPA ----
@@ -372,8 +392,8 @@ func _shelter(m: Control) -> void:
 	for k in 25:
 		var a := PI * k / 24.0
 		pts.append(Vector2(r.get_center().x - cos(a) * (r.size.x * 0.55), r.end.y - sin(a) * mound_h))
-	m.draw_colored_polygon(pts, Color("77777f"))
-	m.draw_polyline(pts, Color("a8a8b0"), 2.0)
+	m.draw_colored_polygon(pts, Color("7d8497"))   # blindaje: crece con el nivel de proteccion
+	m.draw_polyline(pts, Color("b4bccf"), 2.0)
 	var door := Color("4dd6c8") if s.shelter > 50.0 else Color("f1b434")
 	m.draw_rect(Rect2(r.get_center().x - 9, r.end.y - 22, 18, 22), door.darkened(0.2))
 
@@ -384,13 +404,16 @@ func _rover(m: Control) -> void:
 	var speed := 1.0 if busy else 0.25
 	var f := fmod(_t * 0.18 * speed + 0.0, 1.0)
 	var tri := 1.0 - absf(f * 2.0 - 1.0)
+	# Dron de construccion que flota entre modulos (en orbita no hay suelo por donde rodar).
 	var a := Vector2(420, 520)
 	var b := Vector2(560, 520)
-	var p := a.lerp(b, tri)
-	m.draw_rect(Rect2(p.x - 14, p.y - 12, 28, 12), Color("e0b94a"))
+	var p := a.lerp(b, tri) + Vector2(0, sin(_t * 2.0) * 3.0)
+	m.draw_style_box(_sb(Color("e0b94a"), 6), Rect2(p.x - 14, p.y - 12, 28, 14))
 	m.draw_rect(Rect2(p.x - 6, p.y - 20, 14, 9), Color("aab2c4"))
-	m.draw_circle(p + Vector2(-9, 2), 5.0, Color("2a2f3c"))
-	m.draw_circle(p + Vector2(9, 2), 5.0, Color("2a2f3c"))
+	m.draw_circle(p + Vector2(0, -15), 2.5, Color("4dd6c8"))
+	for sx in [-1.0, 1.0]:
+		m.draw_rect(Rect2(p.x + sx * 12 - 3, p.y + 2, 6, 4), Color("39425a"))
+		m.draw_colored_polygon(PackedVector2Array([p + Vector2(sx * 12 - 2, 6), p + Vector2(sx * 12 + 2, 6), p + Vector2(sx * 12, 12 + (4.0 if busy else 1.0))]), Color("ffb347", 0.85))
 	if busy:
 		m.draw_line(p + Vector2(14, -8), p + Vector2(24, -16 + sin(_t * 8.0) * 3.0), Color("e0b94a"), 3.0)
 
@@ -430,6 +453,9 @@ func _map_input(ev: InputEvent) -> void:
 func _select(id: String) -> void:
 	selected = id
 	_refresh_module_panel()
+	if _tutorial != null:
+		_tutorial.notify("select")
+		_tutorial.notify("select:" + id)
 
 
 func _toggle_task(tid: String) -> void:
@@ -442,6 +468,8 @@ func _toggle_task(tid: String) -> void:
 		tasks.append(tid)
 	_say_task(tid)
 	_refresh_all()
+	if _tutorial != null and tid in plan["tasks"]:
+		_tutorial.notify("task")
 
 
 func _say_task(tid: String) -> void:
@@ -470,24 +498,45 @@ func _refresh_module_panel() -> void:
 	for c in _module_box.get_children():
 		c.queue_free()
 	if selected == "":
-		_module_box.add_child(UI.lbl("👆 Toca un módulo de la base para ver qué hace y qué puedes hacer con él.", 15, UI.MUTED, true, 250))
+		var hint := UI.lbl("👆", 54)
+		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_module_box.add_child(hint)
+		var ht := UI.lbl("¡Toca un edificio de la base!", 20, UI.TEXT, true, 250)
+		ht.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_module_box.add_child(ht)
 		return
 	var d: Dictionary = ModuleDefs.DEFS[selected]
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 8)
-	_module_box.add_child(head)
-	head.add_child(UI.lbl(d["icon"], 26))
-	var nm := UI.lbl(d["name"], 18, UI.GOLD, true, 190)
-	nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head.add_child(nm)
 	var lvl := _status_level(selected)
-	head.add_child(UI.lbl("●", 26, UI.light_color(lvl)))
-	_module_box.add_child(UI.lbl(d["func"], 14, UI.TEXT, true, 250))
-	var st := PanelContainer.new()
-	st.add_theme_stylebox_override("panel", UI.box(UI.light_color(lvl).darkened(0.7), UI.light_color(lvl), 2, 8, 5))
-	st.add_child(UI.lbl(_state_text(selected), 13, UI.TEXT, true, 240))
-	_module_box.add_child(st)
-	_module_box.add_child(UI.lbl(_flow_text(selected), 13, Color("ffe08a"), true, 250))
+	var st := KidText.state(lvl)
+	# 1-4) Ilustracion grande, nombre, funcion y estado (color + simbolo + palabra)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 10)
+	_module_box.add_child(head)
+	head.add_child(KidKit.disc(str(d["icon"]), st["col"], 72))
+	var hv := VBoxContainer.new()
+	hv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	head.add_child(hv)
+	hv.add_child(UI.lbl(str(d["name"]), 20, UI.GOLD, true, 170))
+	var badge := UI.lbl(" %s %s " % [st["icon"], st["word"]], 15, Color.WHITE)
+	badge.add_theme_stylebox_override("normal", UI.box(Color(st["col"]).darkened(0.45), st["col"], 2, 10, 2))
+	hv.add_child(badge)
+	# 5) Una frase explicativa en un globo
+	var phrase := KidText.module_phrase(selected, lvl)
+	if phrase != "":
+		var bub := PanelContainer.new()
+		bub.add_theme_stylebox_override("panel", UI.box(Color("eaf3ff"), Color("8ec5ff"), 3, 10, 8))
+		var bl := UI.lbl(phrase, 18, Color("15306b"), true, 240)
+		bl.add_theme_constant_override("outline_size", 0)
+		bub.add_child(bl)
+		_module_box.add_child(bub)
+	# Lo que produce y lo que gasta, en iconos
+	var chips := HFlowContainer.new()
+	chips.add_theme_constant_override("h_separation", 6)
+	chips.add_theme_constant_override("v_separation", 4)
+	_module_box.add_child(chips)
+	for c in _module_chips(selected):
+		chips.add_child(KidKit.chip(str(c[0]), str(c[1]), bool(c[2]), 17))
 	# Controles propios de cada modulo
 	if selected == "greenhouse":
 		_led_selector()
@@ -495,6 +544,7 @@ func _refresh_module_panel() -> void:
 		_command_controls()
 	if selected == "lab":
 		_lab_controls()
+	# 6) Botones de accion
 	for tid in d["tasks"]:
 		if not s.task_visible(tid):
 			continue
@@ -502,28 +552,53 @@ func _refresh_module_panel() -> void:
 	_info_section(d)
 
 
-## Datos extra plegables: mantiene el panel corto para ninos y deja la ciencia a un toque.
+## Lo que el edificio da (verde) y lo que gasta (rojo) este turno, como [icono, texto, bueno].
+func _module_chips(id: String) -> Array:
+	match id:
+		"life_support": return [["💨", "+%d" % int(11.0 * s.ls_cond / 100.0), true], ["⚡", "−70", false]]
+		"greenhouse":
+			var lf: float = SimConfig.LIGHT[s.led]
+			return [["🍎", "+%d" % int(s.beds * SimConfig.FOOD_PER_BED * lf * s.plant_health / 100.0), true], ["💨", "", true], ["⚡", "−%d" % int(s.led_load(s.led)), false]]
+		"fertilization": return [["🌱", "+20", true], ["⚡", "−10", false], ["🧱", "−4", false]]
+		"shelter": return [["🛡️", "%d" % int(s.shield), true], ["🏠", "%d" % int(s.shelter), true], ["⚡", "−40", false]]
+		"main_energy": return [["☀️", "+%d" % int(s.generation()), true], ["🔋", "%d" % int(s.main), true]]
+		"backup_energy": return [["🔋", "%d" % int(s.backup), true]]
+		"panels": return [["⚡", "+%d" % int(s.panels * SimConfig.PANEL_OUTPUT * s.solar_factor * s.solar_event_mult), s.is_day()]]
+		"processing": return [["🧱", "+30", true], ["⚡", "−40", false]]
+		"lab": return [["🔬", "+50", true], ["⚡", "−50", false]]
+		"infirmary": return [["❤️", "+20", true], ["⚡", "−10", false]]
+		"dorms", "common", "habitat": return [["❤️", "+6", true], ["⚡", "−%d" % int(SimConfig.LOAD_HABITAT * (0.7 if s.saving else 1.0)), false]]
+		"command": return [["🔌", "−%d" % int(SimConfig.LOAD_CONTROL * (0.7 if s.saving else 1.0)), false]]
+	return []
+
+
 func _info_section(d: Dictionary) -> void:
-	var tg := UI.btn("ℹ Menos información" if _info_open else "ℹ Más información y ciencia NASA", Color("2a3b66"), func() -> void:
+	var tg := UI.btn("💡 Ocultar" if _info_open else "💡 ¿Sabías qué?", Color("6a4fd0"), func() -> void:
 		_info_open = not _info_open
-		_refresh_module_panel(), 12, 32)
+		_refresh_module_panel(), 14, 40)
 	_module_box.add_child(tg)
 	if not _info_open:
 		return
-	_module_box.add_child(UI.lbl("Necesita: " + d["needs"], 12, UI.MUTED, true, 250))
-	_module_box.add_child(UI.lbl("Ojo: " + d["conseq"], 12, Color("ffd9a0"), true, 250))
+	# El robot explica con una analogia sencilla; el detalle tecnico y la fuente de NASA quedan aqui.
+	var an: String = str(KidText.ANALOGY.get(selected, ""))
+	if an != "":
+		_module_box.add_child(UI.lbl("🤖 " + an, 16, UI.GOLD, true, 250))
+	_module_box.add_child(UI.lbl(_state_text(selected), 14, UI.TEXT, true, 250))
+	_module_box.add_child(UI.lbl(_flow_text(selected), 14, Color("ffe08a"), true, 250))
+	_module_box.add_child(UI.lbl("Necesita: " + d["needs"], 14, UI.MUTED, true, 250))
+	_module_box.add_child(UI.lbl("Ojo: " + d["conseq"], 14, Color("ffd9a0"), true, 250))
 	if d.has("ref"):
 		var rb := PanelContainer.new()
-		rb.add_theme_stylebox_override("panel", UI.box(Color("0c2230"), UI.REF, 2, 8, 6))
+		rb.add_theme_stylebox_override("panel", UI.box(Color("0c3040"), UI.REF, 2, 8, 6))
 		var rv := VBoxContainer.new()
 		rb.add_child(rv)
-		rv.add_child(UI.badge(ScientificDataManager.LABEL_REF, 11))
-		rv.add_child(UI.lbl(d["ref"]["text"], 12, UI.TEXT, true, 240))
+		rv.add_child(UI.badge(ScientificDataManager.LABEL_REF, 12))
+		rv.add_child(UI.lbl(d["ref"]["text"], 14, UI.TEXT, true, 240))
 		var lk := LinkButton.new()
 		lk.text = d["ref"]["label"]
 		lk.uri = d["ref"]["url"]
-		lk.add_theme_font_size_override("font_size", 12)
-		lk.add_theme_color_override("font_color", Color("6fb4ff"))
+		lk.add_theme_font_size_override("font_size", 14)
+		lk.add_theme_color_override("font_color", Color("8cc8ff"))
 		rv.add_child(lk)
 		_module_box.add_child(rb)
 
@@ -567,8 +642,15 @@ func _task_button(tid: String) -> Button:
 	var c := s.task_cost(tid)
 	var forced := tid in s.forced_tasks
 	var on: bool = forced or (tid in plan["tasks"])
-	var b := UI.btn("%s%s  %s\n⏱%dh  🧱%d  ⚡%d" % ["🔒 " if forced else ("✔ " if on else ""), c.get("icon", TASKS_ICON(tid)), BaseState.TASKS[tid]["name"],
-			c["hours"], c["mat"], c["energy"]], Color("1f9f55") if on else Color("245aa8"), Callable(), 13, 46)
+	var costs: PackedStringArray = []
+	if int(c["hours"]) > 0:
+		costs.append("⏱ %dh" % int(c["hours"]))
+	if int(c["mat"]) > 0:
+		costs.append("🧱 %d" % int(c["mat"]))
+	if int(c["energy"]) > 0:
+		costs.append("⚡ %d" % int(c["energy"]))
+	var b := UI.btn("%s%s  %s\n%s" % ["🔒 " if forced else ("✔ " if on else ""), c.get("icon", TASKS_ICON(tid)), BaseState.TASKS[tid]["name"],
+			"  ".join(costs) if not costs.is_empty() else "¡Gratis!"], Color("28b36a") if on else Color("3b6fe0"), Callable(), 15, 56)
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	if not on:
 		var test: Array = (plan["tasks"] as Array).duplicate()
@@ -694,34 +776,34 @@ func _refresh_all() -> void:
 	_map.modulate = Color.WHITE if s.is_day() else Color(0.86, 0.9, 1.0)
 	_extra_label.text = _extra_text()
 	_extra_label.visible = _extra_label.text != ""
-	_title_label.text = "DÍA %d · TURNO %d/%d" % [s.day_number(), mini(s.turn, s.turns), s.turns]
-	_phase_label.text = ("☀ " if s.is_day() else "🌙 ") + PHASE_NAMES[(mini(s.turn, s.turns) - 1) % 3] + (" · luz solar" if s.is_day() else " · sin luz solar")
+	_title_label.text = "Día %d · Turno %d de %d" % [s.day_number(), mini(s.turn, s.turns), s.turns]
+	_phase_label.text = "☀ Hay luz del Sol" if s.is_day() else "🌙 Es de noche: no hay Sol"
+	_turn_dots.queue_redraw()
 
 
 func _refresh_indicators() -> void:
 	var ind := s.indicators()
-	for k in INDICATORS:
-		var row: Dictionary = _ind_rows[k[0]]
-		var v: float = ind[k[0]]
-		var lvl := UI.light_of(v)
-		(row["dot"] as Label).add_theme_color_override("font_color", UI.light_color(lvl))
-		var pb: ProgressBar = row["bar"]
-		pb.value = v
-		UI.set_bar_color(pb, UI.light_color(lvl))
-		(row["val"] as Label).text = "%d%%" % int(v)
-	(_ind_rows["vida"]["sub"] as Label).text = "O₂ %d · CO₂ %d · 💧 %d" % [s.o2, s.co2, s.water]
-	(_ind_rows["proteccion"]["sub"] as Label).text = "Radiación recibida %d/100" % s.exposure
-	(_ind_rows["energia"]["sub"] as Label).text = "Principal %d · Respaldo %d" % [s.main, s.backup]
-	(_ind_rows["alimentos"]["sub"] as Label).text = "Comida %d · plantas %d%%" % [s.food, s.plant_health]
+	var air := minf(s.o2, 100.0 - s.co2)   # aire sano: oxigeno y CO2 juntos
+	KidKit.set_meter(_ind_rows["vida"], air)
+	KidKit.set_meter(_ind_rows["agua"], s.water)
+	KidKit.set_meter(_ind_rows["energia"], ind["energia"])
+	KidKit.set_meter(_ind_rows["alimentos"], ind["alimentos"])
+	KidKit.set_meter(_ind_rows["proteccion"], ind["proteccion"])
+	KidKit.set_meter(_ind_rows["materiales"], minf(100.0, s.materials), s.materials)
+	# El detalle tecnico queda a un paso (cursor encima), no ocupa la pantalla.
+	(_ind_rows["vida"]["root"] as Control).tooltip_text = "Oxígeno %d · CO₂ %d" % [s.o2, s.co2]
+	(_ind_rows["energia"]["root"] as Control).tooltip_text = "Principal %d · Respaldo %d" % [s.main, s.backup]
+	(_ind_rows["alimentos"]["root"] as Control).tooltip_text = "Comida %d · plantas sanas %d%%" % [s.food, s.plant_health]
+	(_ind_rows["proteccion"]["root"] as Control).tooltip_text = "Radiación recibida %d de 100" % s.exposure
 
 
 func _refresh_budget() -> void:
 	var pv := s.preview(plan)
 	var e_use: float = pv["energy_load"]
 	var e_have: float = pv["energy_have"]
-	_set_budget("energy", e_use, e_have, "⚡ Energía: usa %d de %d" % [e_use, e_have])
-	_set_budget("mat", pv["mat"], maxf(1.0, s.materials), "🧱 Materiales: usa %d de %d" % [pv["mat"], s.materials])
-	_set_budget("hours", pv["hours"], pv["hours_budget"], "⏱ Horas: usa %d de %d" % [pv["hours"], pv["hours_budget"]])
+	_set_budget("energy", e_use, e_have, "⚡ Energía  %d / %d" % [e_use, e_have])
+	_set_budget("mat", pv["mat"], maxf(1.0, s.materials), "🧱 Materiales  %d / %d" % [pv["mat"], s.materials])
+	_set_budget("hours", pv["hours"], pv["hours_budget"], "⏱ Horas  %d / %d" % [pv["hours"], pv["hours_budget"]])
 	_end_btn.disabled = not bool(pv["ok"]) or s.finished
 	_warn.text = str(pv["why"])
 	if e_use > e_have:
@@ -748,6 +830,14 @@ func _refresh_risks() -> void:
 
 ## Linea de estado propia de cada mision (datos enviados, trajes, fisura, ciclo de luz...).
 func _extra_text() -> String:
+	var base := _mission_extra_text()
+	if _alerts != null and not s.alert_log.is_empty():
+		var al := "🚨 Alertas: %d · Puntos: %d" % [s.alert_log.size(), s.alert_score]
+		return al if base == "" else base + "  ·  " + al
+	return base
+
+
+func _mission_extra_text() -> String:
 	if bool(s.rule("heat_comms", false)):
 		return "📡 Datos enviados: %d de %d  ·  ❄ Calefacción %s" % [s.data_sent, int(s.mission.win_extra.get("min_data", 0)), "ON" if s.heat_on else "apagada"]
 	if bool(s.rule("breach", false)):
@@ -779,21 +869,26 @@ func _show_banner(text: String) -> void:
 func _robot_tip() -> String:
 	var ind := s.indicators()
 	if s.turn >= s.alert_turn - 1 and s.turn <= s.alert_turn and s.alert_tier > 0:
-		return "¡Tormenta solar! Revisa el refugio y su energía."
+		return "¡Tormenta solar! ¡Revisa el escudo y el refugio!"
 	if s.energy_total() < 250.0:
-		return "¡Recuerda reservar energía para el oxígeno!"
+		return "¡Necesitamos más energía!"
+	if s.water < 30.0:
+		return "¡Cuidado! Queda poca agua."
 	if s.exposure > 40.0:
-		return "La radiación sube. Más blindaje protege a tu equipo, pero utiliza materiales."
+		return "¡Sube la radiación! ¡El escudo necesita mejoras!"
+	var coach := GuideCoach.advice(s)   # guia segun lo que el jugador fue decidiendo
+	if coach != "":
+		return KidText.short(coach, 100)
 	if s.food < 25.0:
-		return "Poca comida. Cuida las plantas y dales luz."
+		return "¡Poca comida! Cuida las plantas."
 	if s.plant_health < 50.0:
-		return "Tus plantas necesitan cuidados."
+		return "¡Las plantas necesitan cuidados!"
 	if s.ls_cond < 50.0:
-		return "El soporte vital está cansado. ¡Necesita mantenimiento!"
+		return "¡El soporte vital está cansado!"
 	if ind["proteccion"] < 40.0 and s.turn < s.alert_turn:
-		return "Aún falta protección. Una tormenta solar se acerca."
-	var generic := ["Más luz ayuda a tus plantas, pero consume energía.", "Más blindaje protege a tu equipo, pero utiliza materiales.",
-			"¡Recuerda reservar energía para el oxígeno!", "Las plantas ayudan con el aire, pero no lo hacen todo."]
+		return "¡El escudo necesita mejoras!"
+	var generic := ["¡Buen trabajo, comandante!", "Más luz ayuda a las plantas, pero gasta energía.", "El escudo protege al equipo, pero usa materiales.",
+			"¡Guarda energía para el aire!"]
 	_tip_idx += 1
 	return generic[_tip_idx % generic.size()]
 
@@ -807,6 +902,8 @@ func _begin_turn(skip_intro: bool = false) -> void:
 	var cards := MissionDirector.cards_for_turn(s)
 	_refresh_all()
 	_tip.text = _robot_tip()
+	if _tutorial != null:
+		_tutorial.notify("turn:%d" % s.turn)
 	if s.turn == 1 and not skip_intro:
 		_show_intro()
 		return
@@ -823,78 +920,82 @@ func _show_intro() -> void:
 	_intro_pending = true
 	await _wait_moon()
 	_intro_pending = false
-	var v := _modal(s.mission.title.to_upper(), UI.GOLD, 740)
-	var diff := UI.lbl("Nivel %s · %s  Dificultad: %s" % [s.mission.tier_label(), s.mission.stars(), s.mission.difficulty_label()], 14, s.mission.difficulty_color())
+	var v := _modal("%s %s" % [s.mission.icon, s.mission.title], UI.GOLD, 860)
+	var diff := UI.lbl("%s  %s" % [s.mission.stars(), s.mission.difficulty_label()], 17, s.mission.difficulty_color())
 	diff.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(diff)
-	var mods := UI.lbl("Modificadores: " + s.mission.modifiers_text(), 12, UI.MUTED)
-	mods.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(mods)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 14)
-	v.add_child(row)
+	# La mision en una imagen y una frase: la Luna, la base y los astronautas.
+	var scene_row := HBoxContainer.new()
+	scene_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	scene_row.add_theme_constant_override("separation", 14)
+	v.add_child(scene_row)
 	if _moon_tex != null:
-		var col := VBoxContainer.new()
-		row.add_child(col)
 		var tr := TextureRect.new()
 		tr.texture = _moon_tex
-		tr.custom_minimum_size = Vector2(250, 125)
+		tr.custom_minimum_size = Vector2(190, 95)
 		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-		col.add_child(tr)
-		col.add_child(UI.lbl(_moon_note, 11, UI.MUTED, true, 250))
-		col.add_child(UI.badge(ScientificDataManager.LABEL_HISTORIC, 11))
-	var info := VBoxContainer.new()
-	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(info)
-	info.add_child(UI.lbl(s.mission.summary, 15, UI.TEXT, true, 380))
-	info.add_child(UI.lbl("⚖ DILEMA: " + s.mission.dilemma_title, 15, UI.GOLD, true, 380))
-	info.add_child(UI.lbl("🛡 Proteges: " + s.mission.protect, 13, UI.GREEN, true, 380))
-	info.add_child(UI.lbl("✂ Sacrificas: " + s.mission.sacrifice, 13, Color("ff9d6d"), true, 380))
-	info.add_child(UI.lbl("Todo compite por ⚡ energía, 🧱 materiales y ⏱ horas. Mejorar una parte puede dañar otra.", 13, Color("ffd9a0"), true, 380))
-	v.add_child(UI.lbl("🤖 «¡Hola, Comandante! Toca los módulos de la base y elige qué hacer cada turno.»", 14, UI.MUTED, true, 600))
-	v.add_child(UI.btn("¡Empezar misión!", Color("1f9f55"), func() -> void:
+		tr.tooltip_text = _moon_note
+		scene_row.add_child(tr)
+	for pair in [["🌙", Color("8d93ad")], ["🛰️", Color("4f8dff")], ["🧑‍🚀", Color("f1b434")]]:
+		scene_row.add_child(KidKit.disc(str(pair[0]), pair[1], 78))
+	var goal := UI.lbl("¡Mantén a tu equipo seguro durante 3 días junto a la Luna!", 24, UI.TEXT, true, 760)
+	goal.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(goal)
+	v.add_child(KidKit.protect_sacrifice(s.mission.protect, s.mission.sacrifice))
+	v.add_child(KidKit.how_to_play())
+	if _alerts != null:
+		var al := UI.lbl("🚨 ¡Pueden sonar alertas! Decide rápido.", 17, Color("ffb07a"))
+		al.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		v.add_child(al)
+	v.add_child(UI.btn("🚀 ¡Empezar misión!", Color("28b36a"), func() -> void:
 		_close_modal()
-		_show_banner("☀ Es de día en la Luna. Los paneles solares cargan las baterías."), 20, 50))
+		_show_banner("☀ ¡Hay luz del Sol! Los paneles cargan las baterías."), 24, 60))
 
 
 func _show_card(card: Dictionary, news: Array) -> void:
-	var v := _modal("%s  %s" % [card["icon"], card["title"]], UI.GOLD, 760)
+	var v := _modal("%s  %s" % [card["icon"], KidText.sentence(str(card["title"]))], UI.GOLD, 940)
 	if news.size() > 0:
-		v.add_child(UI.lbl(str(news[0]), 14, UI.MUTED, true, 640))
-	v.add_child(UI.lbl(card["question"], 17, UI.TEXT, true, 640))
+		var nl := UI.lbl(KidText.short(str(news[0]), 80), 15, UI.MUTED, true, 800)
+		nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		v.add_child(nl)
+	# El robot plantea la situacion en una frase corta
+	var ask := HBoxContainer.new()
+	ask.alignment = BoxContainer.ALIGNMENT_CENTER
+	ask.add_theme_constant_override("separation", 10)
+	v.add_child(ask)
+	ask.add_child(KidKit.disc("🤖", Color("5a7bd0"), 56))
+	var bub := PanelContainer.new()
+	bub.add_theme_stylebox_override("panel", UI.box(Color("eaf3ff"), Color("8ec5ff"), 3, 12, 10))
+	var q := UI.lbl(KidText.short(str(card["question"]), 95), 20, Color("15306b"), true, 640)
+	q.add_theme_constant_override("outline_size", 0)
+	bub.add_child(q)
+	ask.add_child(bub)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 12)
+	row.add_theme_constant_override("separation", 14)
 	v.add_child(row)
 	var choice := {"i": -1}
 	var buttons: Array = []
-	var ok := UI.btn("Confirmar", Color("1f9f55"), Callable(), 18, 46)
+	var ok := UI.btn("¡Confirmar! ✔", Color("28b36a"), Callable(), 22, 56)
 	ok.disabled = true
-	var cols := [Color("2f7de0"), Color("e0a02f"), Color("8e5be0")]
+	var cols := [Color("4f8dff"), Color("ffb02f"), Color("b07cff")]
 	var opts: Array = card["options"]
 	for i in opts.size():
 		var o: Dictionary = opts[i]
-		var txt := "%s\n" % o["label"]
-		for g in o.get("good", []):
-			txt += "\n✔ %s" % g
-		for b in o.get("bad", []):
-			txt += "\n✘ %s" % b
-		if o.has("risk"):
-			txt += "\n\n⚠ RIESGO: %s" % o["risk"]
+		var col: Color = cols[i % 3]
 		var cb := Button.new()
 		cb.toggle_mode = true
-		cb.text = txt
-		cb.custom_minimum_size = Vector2(0, 170)
+		cb.custom_minimum_size = Vector2(0, 330)
 		cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		cb.add_theme_font_size_override("font_size", 14)
-		cb.add_theme_stylebox_override("normal", UI.box(Color("0f2150"), cols[i % 3].darkened(0.2), 2, 12, 10))
-		cb.add_theme_stylebox_override("hover", UI.box(Color("17327a"), cols[i % 3], 2, 12, 10))
-		cb.add_theme_stylebox_override("pressed", UI.box(cols[i % 3].darkened(0.55), cols[i % 3].lightened(0.3), 4, 12, 10))
-		cb.add_theme_stylebox_override("disabled", UI.box(Color("11151f"), Color("2a3550"), 2, 12, 10))
+		cb.focus_mode = Control.FOCUS_NONE
+		cb.add_theme_stylebox_override("normal", UI.box(Color("22348a"), col.darkened(0.1), 4, 14, 10))
+		cb.add_theme_stylebox_override("hover", UI.box(Color("2d44a8"), col.lightened(0.2), 4, 14, 10))
+		cb.add_theme_stylebox_override("pressed", UI.box(col.darkened(0.55), Color.WHITE, 6, 14, 10))
+		cb.add_theme_stylebox_override("disabled", UI.box(Color("232a45"), Color("3a4468"), 3, 14, 10))
 		cb.disabled = not bool(o.get("affordable", true))
-		if cb.disabled:
-			cb.text += "\n\n(no alcanzan materiales u horas)"
+		UI.bounce(cb)
 		row.add_child(cb)
+		_fill_option_card(cb, o, str(card["icon"]), col)
 		buttons.append(cb)
 		cb.pressed.connect(func() -> void:
 			choice["i"] = i
@@ -909,25 +1010,160 @@ func _show_card(card: Dictionary, news: Array) -> void:
 		plan["led"] = s.forced_led if s.forced_led >= 0 else s.led
 		_refresh_all()
 		_tip.text = _robot_tip())
-	v.add_child(UI.lbl("💡 Compara costes y beneficios antes de confirmar. No hay una opción siempre mejor.", 13, UI.MUTED, true, 640))
 	v.add_child(ok)
 
 
+## Tarjeta ilustrada de una opcion: dibujo grande, titulo corto, lo que ganas (verde) y lo que pierdes (rojo) en iconos.
+func _fill_option_card(cb: Button, o: Dictionary, card_icon: String, col: Color) -> void:
+	var m := MarginContainer.new()
+	m.set_anchors_preset(Control.PRESET_FULL_RECT)
+	m.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for side in ["left", "right", "top", "bottom"]:
+		m.add_theme_constant_override("margin_" + side, 12)
+	cb.add_child(m)
+	var v := VBoxContainer.new()
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_theme_constant_override("separation", 6)
+	m.add_child(v)
+	var pic := KidKit.disc(KidText.illustration(str(o["label"]), card_icon), col, 92)
+	pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	v.add_child(pic)
+	var title := UI.lbl(str(o["label"]), 20, Color.WHITE, true, 250)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(title)
+	_chip_row(v, "▲ Ganas", KidText.chips(o.get("good", [])), true)
+	_chip_row(v, "▼ Gastas", KidText.chips(o.get("bad", [])), false)
+	if o.has("risk"):
+		var rk := UI.lbl("⚠ " + KidText.short(str(o["risk"]), 60), 14, Color("ffb07a"), true, 250)
+		rk.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		rk.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		v.add_child(rk)
+	if cb.disabled:
+		var lk := UI.lbl("🔒 Faltan materiales u horas", 15, Color("ffb07a"), true, 250)
+		lk.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lk.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		v.add_child(lk)
+
+
+func _chip_row(parent: VBoxContainer, title: String, chips: Array, good: bool) -> void:
+	if chips.is_empty():
+		return
+	var lab := UI.lbl(title, 14, UI.GREEN if good else Color("ff9d9d"))
+	lab.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(lab)
+	var fl := HFlowContainer.new()
+	fl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fl.add_theme_constant_override("h_separation", 5)
+	fl.add_theme_constant_override("v_separation", 4)
+	parent.add_child(fl)
+	for c in chips.slice(0, 4):
+		var num := str(c["num"])
+		if num != "" and not (num.begins_with("+") or num.begins_with("−") or num.begins_with("-")):
+			num = ("+" if good else "−") + num
+		var ch := KidKit.chip(str(c["icon"]), num, good, 16)
+		ch.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		fl.add_child(ch)
+
+
 func _show_alert_modal(news: Array) -> void:
-	var v := _modal("🚨 ¡ALERTA SOLAR!", UI.RED, 700)
-	var head := HBoxContainer.new()
-	v.add_child(head)
-	head.add_child(UI.lbl(NasaBridge.headline(), 17, UI.GOLD, true, 420))
-	head.add_child(UI.badge(NasaBridge.label()))
-	v.add_child(UI.lbl("Hoy el refugio necesita ⚡ 40 de energía. Tu blindaje y tu refugio frenarán la radiación.", 15, UI.TEXT, true, 600))
-	v.add_child(UI.lbl(NasaBridge.mapping_text(), 12, UI.MUTED, true, 600))
+	var v := _modal("☀️ ¡Alerta solar!", UI.RED, 880)
+	var frame := PanelContainer.new()
+	frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	frame.add_theme_stylebox_override("panel", UI.box(Color("0b1240"), UI.RED, 4, 14, 0))
+	frame.clip_contents = true
+	frame.add_child(KidArt.make("solar_alert", Vector2(560, 200)))
+	v.add_child(frame)
+	var say := HBoxContainer.new()
+	say.alignment = BoxContainer.ALIGNMENT_CENTER
+	say.add_theme_constant_override("separation", 10)
+	v.add_child(say)
+	say.add_child(KidKit.disc("🤖", Color("5a7bd0"), 56))
+	var bub := PanelContainer.new()
+	bub.add_theme_stylebox_override("panel", UI.box(Color("eaf3ff"), Color("8ec5ff"), 3, 12, 10))
+	var q := UI.lbl("¡Una tormenta solar se acerca! ¡Protejamos al equipo!", 22, Color("15306b"), true, 560)
+	q.add_theme_constant_override("outline_size", 0)
+	bub.add_child(q)
+	say.add_child(bub)
 	var ind := s.indicators()
-	v.add_child(UI.lbl("Tu protección ahora: %d%%" % int(ind["proteccion"]), 16, UI.light_color(UI.light_of(ind["proteccion"]))))
-	v.add_child(UI.btn("Entendido", Color("1f6fd0"), _close_modal, 18, 46))
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 14)
+	v.add_child(row)
+	var mt := KidKit.meter("🛡️", "Tu escudo", Color("3ddc84"))
+	(mt["root"] as Control).custom_minimum_size = Vector2(300, 0)
+	KidKit.set_meter(mt, float(ind["proteccion"]))
+	row.add_child(mt["root"])
+	row.add_child(KidKit.chip("⚡", "−40 hoy", false, 22))
+	# El dato de NASA, en pequeno y con su etiqueta honesta (SIMULACION / DATO HISTORICO...)
+	var src := HBoxContainer.new()
+	src.alignment = BoxContainer.ALIGNMENT_CENTER
+	src.add_theme_constant_override("separation", 8)
+	src.tooltip_text = NasaBridge.mapping_text()
+	v.add_child(src)
+	src.add_child(UI.lbl(KidText.short(NasaBridge.headline(), 70), 15, UI.MUTED))
+	src.add_child(UI.badge(NasaBridge.label(), 13))
+	v.add_child(UI.btn("🛡️ ¡Entendido!", Color("28b36a"), _close_modal, 24, 58))
+
+
+## Muestra una alerta espacial a pantalla grande. El juego queda en pausa hasta que el jugador responde (o se acaba el tiempo).
+## Tutorial progresivo: el robot ensena cada cosa la primera vez que hace falta.
+func _build_tutorial() -> void:
+	_tutorial = TutorialGuide.new()
+	add_child(_tutorial)
+	_tutorial.can_show = func() -> bool: return _modal_root == null and not _alert_open and not _intro_pending and not s.finished
+	_tutorial.targets = {
+		"energy": func() -> Rect2: return _vis_rect(_ind_rows["energia"]["root"]),
+		"module": func() -> Rect2: return _vis_rect(_module_panel),
+		"greenhouse": func() -> Rect2: return _module_rect("greenhouse"),
+		"shelter": func() -> Rect2: return _module_rect("shelter"),
+		"task": func() -> Rect2: return _vis_rect(_end_btn),
+	}
+
+
+func _vis_rect(c: Control) -> Rect2:
+	return c.get_global_rect() if (c != null and c.is_visible_in_tree() and c.modulate.a > 0.1) else Rect2()
+
+
+func _module_rect(id: String) -> Rect2:
+	var r: Rect2 = ModuleDefs.DEFS[id]["rect"]
+	return Rect2(_map.global_position + r.position, r.size)
+
+
+## Boton «Repetir ayuda» del robot.
+func _replay_help() -> void:
+	if _tutorial != null:
+		_tutorial.replay()
+	else:
+		_tip.text = "¡Toca un edificio para ver qué hace!"
+		_robot_hop = 1.0
+
+
+func _show_space_alert(ev: Dictionary) -> void:
+	if _alert_open or s.finished:
+		return
+	_alert_open = true
+	_alert_ui = AlertOverlay.new()
+	_alert_ui.setup(ev, s)
+	_alert_ui.finished.connect(_on_alert_finished)
+	add_child(_alert_ui)
+
+
+func _on_alert_finished(res: Dictionary) -> void:
+	_alert_open = false
+	_alert_ui = null
+	s.check_end_now()   # red de seguridad: las alertas tienen limites y no deberian terminar la mision
+	_refresh_all()
+	_refresh_module_panel()
+	_tip.text = _robot_tip()
+	_show_banner("🚨 %s  ·  %s%d puntos" % ["Sin respuesta" if bool(res["timed_out"]) else str(res["choice"]), "+" if int(res["score"]) >= 0 else "−", absi(int(res["score"]))])
+	if s.finished:
+		_show_end()
 
 
 func _end_turn() -> void:
-	if s.finished or _modal_root != null or _intro_pending:
+	if s.finished or _modal_root != null or _intro_pending or _alert_open:
 		return
 	var pv := s.preview(plan)
 	if not bool(pv["ok"]):
@@ -940,67 +1176,164 @@ func _end_turn() -> void:
 
 
 func _show_report(turn_done: int, r: Dictionary) -> void:
-	var v := _modal("RESUMEN DEL TURNO %d" % turn_done, UI.GOLD, 640)
+	var v := _modal("✅ ¡Turno %d terminado!" % turn_done, UI.GOLD, 820)
 	var before: Dictionary = r["before"]
 	var after: Dictionary = r["after"]
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 12)
+	v.add_child(row)
+	var net := 0.0
+	var worst := 100.0
 	for k in INDICATORS:
-		var b: float = before[k[0]]
 		var a: float = after[k[0]]
-		var d := a - b
-		var arrow := "▲" if d > 1.0 else ("▼" if d < -1.0 else "■")
-		var col := UI.GREEN if d > 1.0 else (UI.RED if d < -1.0 else UI.MUTED)
-		var row := HBoxContainer.new()
-		v.add_child(row)
-		var n := UI.lbl("%s %s" % [k[1], k[2]], 16, UI.TEXT)
-		n.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(n)
-		row.add_child(UI.lbl("%d%%  %s %d" % [int(a), arrow, int(absf(d))], 16, col))
+		var d: float = a - float(before[k[0]])
+		net += d
+		worst = minf(worst, a)
+		var card := PanelContainer.new()
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var lvl := UI.light_of(a)
+		card.add_theme_stylebox_override("panel", UI.box(Color("22348a"), UI.light_color(lvl), 4, 14, 8))
+		var cv := VBoxContainer.new()
+		cv.add_theme_constant_override("separation", 3)
+		card.add_child(cv)
+		var disc := KidKit.disc(str(k[1]), UI.light_color(lvl), 62)
+		disc.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		cv.add_child(disc)
+		var nm := UI.lbl(str(k[2]), 16, UI.TEXT)
+		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cv.add_child(nm)
+		var st := KidText.state(lvl)
+		var val := UI.lbl("%s %d" % [st["icon"], int(a)], 24, st["col"] if lvl < 2 else Color.WHITE)
+		val.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cv.add_child(val)
+		var arrow := "▲ +%d" % int(round(d)) if d > 1.0 else ("▼ −%d" % int(round(absf(d))) if d < -1.0 else "■ igual")
+		var dl := UI.lbl(arrow, 17, UI.GREEN if d > 1.0 else (UI.RED if d < -1.0 else UI.MUTED))
+		dl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cv.add_child(dl)
+		row.add_child(card)
+	var shown := 0
 	for m in r["msgs"]:
-		v.add_child(UI.lbl("• " + str(m), 14, Color("ffd9a0"), true, 560))
+		if shown >= 2:
+			break
+		v.add_child(UI.lbl("• " + KidText.short(str(m), 90), 17, Color("ffd9a0"), true, 740))
+		shown += 1
 	if not s.finished:
-		v.add_child(UI.lbl("🤖 " + _robot_tip(), 14, UI.MUTED, true, 560))
-	v.add_child(UI.btn("Continuar", Color("1f6fd0"), func() -> void:
+		if worst >= 40.0 and net >= 0.0:
+			_cheer()
+		var say := HBoxContainer.new()
+		say.alignment = BoxContainer.ALIGNMENT_CENTER
+		say.add_theme_constant_override("separation", 10)
+		v.add_child(say)
+		say.add_child(KidKit.disc("🤖", Color("5a7bd0"), 52))
+		var bub := PanelContainer.new()
+		bub.add_theme_stylebox_override("panel", UI.box(Color("eaf3ff"), Color("8ec5ff"), 3, 12, 8))
+		var tl := UI.lbl(KidText.short(_robot_tip(), 100), 19, Color("15306b"), true, 620)
+		tl.add_theme_constant_override("outline_size", 0)
+		bub.add_child(tl)
+		say.add_child(bub)
+	v.add_child(UI.btn("¡Siguiente! ▶", Color("28b36a"), func() -> void:
 		_close_modal()
 		if s.finished:
 			_show_end()
 		else:
-			_begin_turn(), 18, 46))
+			_begin_turn(), 24, 58))
 
 
 func _show_end() -> void:
 	var persist := not _simulated and not ("--shot=" in "".join(OS.get_cmdline_user_args()))
 	var res: Dictionary = MissionManager.finish_run(s, persist)
-	var v := _modal("¡MISIÓN COMPLETADA!" if s.won else "MISIÓN NO COMPLETADA", UI.GOLD if s.won else UI.RED, 760)
-	v.add_child(UI.lbl(s.reason, 17, UI.TEXT, true, 680))
+	var stars := s.stars()
+	var v := _modal("🎉 ¡Misión cumplida!" if s.won else "💪 ¡Buen intento, comandante!", UI.GOLD if s.won else Color("ffb07a"), 900)
+	var frame := PanelContainer.new()
+	frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	frame.add_theme_stylebox_override("panel", UI.box(Color("0b1240"), UI.GOLD if s.won else Color("8ec5ff"), 4, 14, 0))
+	frame.clip_contents = true
+	frame.add_child(KidArt.make("win" if s.won else "lose", Vector2(560, 120)))
+	v.add_child(frame)
+	# Estrellas: aparecen una a una con un rebote
+	var srow := HBoxContainer.new()
+	srow.alignment = BoxContainer.ALIGNMENT_CENTER
+	srow.add_theme_constant_override("separation", 10)
+	v.add_child(srow)
+	for i in 3:
+		var st := UI.lbl("⭐" if i < stars else "☆", 44, Color.WHITE if i < stars else Color("6b7596"))
+		st.pivot_offset = Vector2(28, 28)
+		st.scale = Vector2.ZERO
+		srow.add_child(st)
+		var tw := create_tween()
+		tw.tween_interval(0.5 + i * 0.4)
+		tw.tween_property(st, "scale", Vector2.ONE, 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var msg := UI.lbl(KidText.short(s.reason, 90) if s.won else "Ahora sabemos qué debemos mejorar.", 22, UI.TEXT, true, 820)
+	msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(msg)
+	if not s.won:
+		var tip: Array = KidText.IMPROVE.get(s.reason_id, KidText.IMPROVE["final"])
+		var fix := HBoxContainer.new()
+		fix.alignment = BoxContainer.ALIGNMENT_CENTER
+		fix.add_theme_constant_override("separation", 10)
+		v.add_child(fix)
+		fix.add_child(KidKit.disc(str(tip[0]), Color("ffb02f"), 52))
+		fix.add_child(UI.lbl("Para la próxima: " + str(tip[1]), 21, Color("ffd9a0")))
+	# Sistemas que aguantaron
+	var ind := s.indicators()
+	var held := HBoxContainer.new()
+	held.alignment = BoxContainer.ALIGNMENT_CENTER
+	held.add_theme_constant_override("separation", 10)
+	v.add_child(held)
+	for k in INDICATORS:
+		var lvl := UI.light_of(float(ind[k[0]]))
+		var stt := KidText.state(lvl)
+		var box := HBoxContainer.new()
+		box.add_theme_constant_override("separation", 4)
+		box.add_child(KidKit.disc(str(k[1]), stt["col"], 44))
+		box.add_child(UI.lbl(str(stt["icon"]), 24, stt["col"] if lvl < 2 else Color.WHITE))
+		held.add_child(box)
+	# Logros y misiones nuevas, en una linea cada uno
 	for id in res["new_achievements"]:
 		var d := AchievementManager.def_of(id)
-		v.add_child(UI.lbl("🏆 ¡Logro desbloqueado: %s %s!" % [d.get("icon", ""), d.get("name", id)], 16, UI.GOLD, true, 680))
+		var al := UI.lbl("🏆 ¡Logro! %s %s" % [d.get("icon", ""), d.get("name", id)], 18, UI.GOLD)
+		al.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		v.add_child(al)
 	for id in res["unlocked_missions"]:
-		v.add_child(UI.lbl("🔓 Misión desbloqueada: %s" % MissionManager.get_mission(id).title, 16, UI.GREEN, true, 680))
-	var ind := s.indicators()
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 14)
-	v.add_child(row)
-	for k in INDICATORS:
-		row.add_child(UI.lbl("%s %d%%" % [k[1], int(ind[k[0]])], 16, UI.light_color(UI.light_of(ind[k[0]]))))
-	v.add_child(UI.lbl("Tus decisiones importantes:", 15, UI.GOLD))
-	for d in s.decisions:
-		var good := ", ".join(PackedStringArray(d["good"]))
-		var bad := ", ".join(PackedStringArray(d["bad"]))
-		v.add_child(UI.lbl("T%d · %s → %s\n   ✔ %s · ✘ %s" % [d["turn"], d["title"], d["choice"], good, bad], 12, UI.MUTED, true, 680))
-	if s.won:
-		v.add_child(UI.lbl("Aprendiste que mejorar una parte de la base puede perjudicar otra. ¡Equilibrar los 4 sistemas fue la clave!", 14, Color("7be88a"), true, 680))
-	else:
-		v.add_child(UI.lbl("No pasa nada: así se aprende. Prueba repartir mejor energía, materiales y horas.", 14, Color("ffd9a0"), true, 680))
+		var ml := UI.lbl("🔓 ¡Misión nueva! %s" % MissionManager.get_mission(id).title, 18, UI.GREEN)
+		ml.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		v.add_child(ml)
+	# Tus decisiones importantes, como pastillas con su dibujo
+	if not s.decisions.is_empty():
+		v.add_child(UI.lbl("Tus decisiones importantes:", 16, UI.GOLD))
+		var dfl := HFlowContainer.new()
+		dfl.alignment = FlowContainer.ALIGNMENT_CENTER
+		dfl.add_theme_constant_override("h_separation", 8)
+		dfl.add_theme_constant_override("v_separation", 4)
+		v.add_child(dfl)
+		for dc in s.decisions:
+			var pill := PanelContainer.new()
+			pill.tooltip_text = "%s → %s" % [dc["title"], dc["choice"]]
+			pill.add_theme_stylebox_override("panel", UI.box(Color("22348a"), Color("6db6ff"), 2, 8, 4))
+			pill.add_child(UI.lbl("%s %s" % [KidText.illustration(str(dc["choice"]), "•"), KidText.short(str(dc["choice"]), 26)], 15, UI.TEXT))
+			dfl.add_child(pill)
+	if not s.alert_log.is_empty():
+		var alr := UI.lbl("🚨 Alertas atendidas: %d · ⭐ %d puntos" % [s.alert_log.size(), s.alert_score], 18, UI.MUTED)
+		alr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		v.add_child(alr)
+	# Lo que aprendimos
+	var learn := VBoxContainer.new()
+	learn.add_theme_constant_override("separation", 2)
+	v.add_child(learn)
+	learn.add_child(UI.lbl("💡 Hoy aprendimos:", 19, UI.GOLD))
+	var extras: int = (res["new_achievements"] as Array).size() + (res["unlocked_missions"] as Array).size()
+	for line in (KidText.LEARN.get(s.mission.id, KidText.LEARN["default"]) as Array).slice(0, 2):
+		learn.add_child(UI.lbl("• " + str(line), 17, UI.TEXT, true, 820))
 	var b1 := HBoxContainer.new()
 	b1.add_theme_constant_override("separation", 8)
 	v.add_child(b1)
-	for bb in [["Jugar de nuevo", Color("1f9f55"), func() -> void: get_tree().reload_current_scene()],
-			["Elegir misión", Color("e0a02f"), func() -> void:
+	for bb in [["🔄 Jugar otra vez", Color("28b36a"), func() -> void: get_tree().reload_current_scene()],
+			["🚀 Otra misión", Color("ffa51f"), func() -> void:
 				GameSettings.start_screen = "missions"
 				_go_menu()],
-			["Space Data Center", Color("1f6fd0"), _open_data_center], ["Menú", Color("245aa8"), _go_menu]]:
-		var btn := UI.btn(bb[0], bb[1], bb[2], 15, 44)
+			["📊 Datos", Color("3b6fe0"), _open_data_center], ["🏠 Menú", Color("5a4fd0"), _go_menu]]:
+		var btn := UI.btn(bb[0], bb[1], bb[2], 18, 52)
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b1.add_child(btn)
 
@@ -1038,10 +1371,24 @@ func _modal(title: String, title_col: Color, width: int) -> VBoxContainer:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 10)
 	panel.add_child(v)
-	var t := UI.lbl(title, 24, title_col)
+	_pop_in(panel)
+	var t := UI.lbl(title, 28, title_col)
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(t)
 	return v
+
+
+## Entrada suave de las ventanas: crecen con un pequeno rebote.
+func _pop_in(panel: Control) -> void:
+	panel.modulate.a = 0.0
+	panel.scale = Vector2(0.9, 0.9)
+	await get_tree().process_frame
+	if not is_instance_valid(panel):
+		return
+	panel.pivot_offset = panel.size * 0.5
+	var tw := create_tween().set_parallel(true)
+	tw.tween_property(panel, "modulate:a", 1.0, 0.18)
+	tw.tween_property(panel, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 func _close_modal() -> void:
@@ -1057,7 +1404,19 @@ func _build_ui() -> void:
 	_world.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_world.draw.connect(_draw_world)
 	add_child(_world)
-	# De noche solo se oscurece el terreno: la Tierra y la base (con luces propias) siguen brillando.
+	# La Luna, grande y al fondo (imagen real LRO cuando carga). Misma esfera que la Tierra, sin atmosfera.
+	_moon = ColorRect.new()
+	_moon.position = MOON_CENTER - Vector2(MOON_RADIUS, MOON_RADIUS)
+	_moon.size = Vector2(MOON_RADIUS, MOON_RADIUS) * 2.0
+	_moon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var mmat := ShaderMaterial.new()
+	mmat.shader = load("res://shaders/earth_sphere.gdshader")
+	mmat.set_shader_parameter("atmo", 0.0)
+	mmat.set_shader_parameter("gain", 1.7)
+	mmat.set_shader_parameter("fallback", Color("a9abb5"))
+	_moon.material = mmat
+	add_child(_moon)
+	# De noche solo se oscurece el fondo: la Tierra y la base (con luces propias) siguen brillando.
 	_night = ColorRect.new()
 	_night.color = Color(0.02, 0.03, 0.12, 0.0)
 	_night.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -1073,7 +1432,7 @@ func _build_ui() -> void:
 	_earth.material = mat
 	add_child(_earth)
 	var cap := UI.lbl("", 11, UI.MUTED)
-	cap.position = Vector2(790, 176)
+	cap.position = Vector2(690, 200)
 	add_child(cap)
 	_earth.set_meta("cap", cap)
 	# Mapa de la base
@@ -1101,30 +1460,32 @@ func _build_ui() -> void:
 
 func _build_top() -> void:
 	var p := PanelContainer.new()
-	p.position = Vector2(300, 8)
-	p.custom_minimum_size = Vector2(480, 0)
-	p.add_theme_stylebox_override("panel", UI.box(Color(0.04, 0.09, 0.22, 0.92), UI.BORDER, 2, 12, 6))
+	p.position = Vector2(290, 8)
+	p.custom_minimum_size = Vector2(500, 0)
+	p.add_theme_stylebox_override("panel", UI.panel_box(0.94, UI.BORDER, 6))
 	add_child(p)
 	_register("mission", p)
 	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 0)
 	p.add_child(v)
-	var t := UI.lbl("MISIÓN: " + s.mission.title.to_upper(), 15, UI.GOLD)
+	var t := UI.lbl("%s %s" % [s.mission.icon, s.mission.title], 16, UI.GOLD)
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(t)
-	_title_label = UI.lbl("", 18)
+	_title_label = UI.lbl("", 21)
 	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(_title_label)
-	_phase_label = UI.lbl("", 13, UI.MUTED)
+	_turn_dots = KidKit.turn_dots(s.turns, func() -> int: return mini(s.turn, s.turns), s.night_from)
+	var dots_row := CenterContainer.new()
+	dots_row.add_child(_turn_dots)
+	v.add_child(dots_row)
+	_phase_label = UI.lbl("", 14, UI.MUTED)
 	_phase_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(_phase_label)
-	var mode_l := UI.lbl("%s · NIVEL %s · %s" % [GameSettings.mode_label().to_upper(), s.mission.tier_label().to_upper(), s.mission.difficulty_label().to_upper()], 11, UI.MUTED)
-	mode_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(mode_l)
-	_extra_label = UI.lbl("", 12, UI.GOLD)
+	_extra_label = UI.lbl("", 13, UI.GOLD)
 	_extra_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(_extra_label)
-	_banner = UI.lbl("", 15, UI.GOLD, true, 600)
-	_banner.position = Vector2(250, 142)
+	_banner = UI.lbl("", 17, UI.GOLD, true, 600)
+	_banner.position = Vector2(250, 158)
 	_banner.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	_banner.add_theme_constant_override("outline_size", 6)
 	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1132,97 +1493,90 @@ func _build_top() -> void:
 	_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_banner.modulate.a = 0.0
 	add_child(_banner)
-	var mb := UI.btn("☰ Menú", Color("245aa8"), _go_menu, 14, 34)
+	var mb := UI.btn("🏠 Menú", Color("3b6fe0"), _go_menu, 15, 40)
 	mb.position = Vector2(14, 8)
-	mb.custom_minimum_size = Vector2(100, 34)
+	mb.custom_minimum_size = Vector2(120, 44)
 	add_child(mb)
 	_register("menu_btn", mb)
 
 
 func _build_indicators() -> void:
 	var p := PanelContainer.new()
-	p.position = Vector2(12, 66)
-	p.custom_minimum_size = Vector2(228, 0)
-	p.add_theme_stylebox_override("panel", UI.box(Color(0.04, 0.09, 0.22, 0.92), UI.BORDER, 2, 10, 8))
+	p.position = Vector2(12, 62)
+	p.custom_minimum_size = Vector2(240, 0)
+	p.add_theme_stylebox_override("panel", UI.panel_box(0.94, UI.BORDER, 8))
 	add_child(p)
 	_register("indicators", p)
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 9)
+	v.add_theme_constant_override("separation", 7)
 	p.add_child(v)
-	for k in INDICATORS:
-		var col := VBoxContainer.new()
-		col.add_theme_constant_override("separation", 1)
-		v.add_child(col)
-		var top := HBoxContainer.new()
-		col.add_child(top)
-		var n := UI.lbl("%s %s" % [k[1], k[2]], 14, UI.TEXT)
-		n.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		top.add_child(n)
-		var dot := UI.lbl("●", 18, UI.GREEN)
-		top.add_child(dot)
-		var val := UI.lbl("", 14, UI.TEXT)
-		top.add_child(val)
-		var pb := UI.bar(100, 100, UI.GREEN, 14)
-		col.add_child(pb)
-		var sub := UI.lbl("", 11, UI.MUTED)
-		col.add_child(sub)
-		_ind_rows[k[0]] = {"dot": dot, "bar": pb, "val": val, "sub": sub}
+	for m in METERS:
+		var mt := KidKit.meter(str(m[1]), str(m[2]), m[3])
+		v.add_child(mt["root"])
+		_ind_rows[str(m[0])] = mt
 
 
 func _build_robot() -> void:
 	var p := PanelContainer.new()
-	p.position = Vector2(12, 478)
-	p.custom_minimum_size = Vector2(228, 0)
-	p.add_theme_stylebox_override("panel", UI.box(Color(0.04, 0.09, 0.22, 0.92), UI.BORDER, 2, 10, 8))
+	p.position = Vector2(12, 466)
+	p.custom_minimum_size = Vector2(240, 0)
+	p.add_theme_stylebox_override("panel", UI.box(Color("eaf3ff"), Color("8ec5ff"), 4, 14, 8))   # globo de dialogo claro
 	add_child(p)
 	_register("robot", p)
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 8)
 	p.add_child(h)
 	var rb := Control.new()
-	rb.custom_minimum_size = Vector2(62, 84)
-	rb.draw.connect(func() -> void:
-		var bob := sin(_t * 2.0) * 2.0 - _robot_hop * 10.0
-		rb.draw_circle(Vector2(31, 82), 20.0, Color(0, 0, 0, 0.0))
-		# cuerpo, brazos y cabeza
-		rb.draw_style_box(_sb(Color("5a7bd0"), 8, Color("3a56a8")), Rect2(17, 58 + bob, 28, 20))
-		rb.draw_circle(Vector2(31, 62 + bob), 5.0, Color("ffd24d"))
-		rb.draw_circle(Vector2(31, 36 + bob), 27.0, Color("eef2f8"))
-		rb.draw_arc(Vector2(31, 36 + bob), 27.0, 0, TAU, 40, Color("aab6cf"), 3.0)
-		rb.draw_circle(Vector2(31, 37 + bob), 20.0, Color("0c1730"))
-		var blink: bool = fmod(_t, 3.4) > 3.25
-		var ey := 4.0 if not blink else 1.0
-		rb.draw_rect(Rect2(21, 34 + bob - ey * 0.5, 7, ey * 2.0), Color("5fe0ff"))
-		rb.draw_rect(Rect2(35, 34 + bob - ey * 0.5, 7, ey * 2.0), Color("5fe0ff"))
-		rb.draw_arc(Vector2(31, 41 + bob), 6.0, 0.15 * PI, 0.85 * PI, 10, Color("5fe0ff"), 2.0)
-		rb.draw_line(Vector2(31, 9 + bob), Vector2(31, 1 + bob), Color("aab2c4"), 3.0)
-		rb.draw_circle(Vector2(31, 1 + bob), 3.5, Color("ff5d5d") if fmod(_t, 1.0) < 0.5 else Color("ff9d9d")))
+	rb.custom_minimum_size = Vector2(66, 88)
+	rb.draw.connect(func() -> void: KidKit.draw_robot(rb, Vector2(2, 2), _t, _robot_hop, _robot_mood()))
 	var tmr := Timer.new()
 	tmr.wait_time = 0.05
 	tmr.autostart = true
 	tmr.timeout.connect(rb.queue_redraw)
 	rb.add_child(tmr)
 	h.add_child(rb)
-	_tip = UI.lbl("", 13, UI.TEXT, true, 150)
-	_tip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	h.add_child(_tip)
+	var tv := VBoxContainer.new()
+	tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tv.add_theme_constant_override("separation", 4)
+	h.add_child(tv)
+	_tip = UI.lbl("", 16, Color("15306b"), true, 140)
+	_tip.add_theme_constant_override("outline_size", 0)
+	_tip.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	tv.add_child(_tip)
+	var help := UI.btn("❓ Repetir ayuda", Color("6a4fd0"), _replay_help, 13, 36)
+	help.custom_minimum_size = Vector2(0, 36)
+	tv.add_child(help)
+
+
+## El robot se preocupa (boca plana) cuando el aire o la energia estan en rojo.
+func _robot_mood() -> int:
+	if Time.get_ticks_msec() < _happy_until:
+		return 2
+	var ind := s.indicators()
+	return 0 if UI.light_of(minf(float(ind["vida"]), float(ind["energia"]))) == 0 else 1
+
+
+## El robot celebra un momento (salta y pone cara contenta).
+func _cheer() -> void:
+	_happy_until = Time.get_ticks_msec() + 4500
+	_robot_hop = 1.0
 
 
 func _build_right() -> void:
 	var bp := PanelContainer.new()
 	bp.position = Vector2(962, 8)
 	bp.custom_minimum_size = Vector2(306, 0)
-	bp.add_theme_stylebox_override("panel", UI.box(Color(0.04, 0.09, 0.22, 0.94), UI.BORDER, 2, 10, 8))
+	bp.add_theme_stylebox_override("panel", UI.panel_box(0.94, UI.BORDER, 8))
 	add_child(bp)
 	_register("resources", bp)
 	var bv := VBoxContainer.new()
 	bv.add_theme_constant_override("separation", 3)
 	bp.add_child(bv)
-	bv.add_child(UI.lbl("RECURSOS DE ESTE TURNO", 13, UI.GOLD))
+	bv.add_child(UI.lbl("📝 Tu plan de hoy", 17, UI.GOLD))
 	for k in [["energy", UI.YELLOW], ["mat", Color("c9b27a")], ["hours", Color("7fb3ff")]]:
-		var lab := UI.lbl("", 13, UI.TEXT)
+		var lab := UI.lbl("", 15, UI.TEXT)
 		bv.add_child(lab)
-		var pb := UI.bar(0, 100, k[1], 12)
+		var pb := UI.bar(0, 100, k[1], 14)
 		bv.add_child(pb)
 		_budget[k[0]] = {"label": lab, "bar": pb}
 	_warn = UI.lbl("", 12, UI.RED, true, 280)
@@ -1237,16 +1591,17 @@ func _build_right() -> void:
 	_risk_box = VBoxContainer.new()
 	_risk_box.add_theme_constant_override("separation", 1)
 	_risk_panel.add_child(_risk_box)
-	_end_btn = UI.btn("Finalizar turno ▶▶", Color("1f9f55"), _end_turn, 17, 42)
-	_end_btn.position = Vector2(962, 186)
-	_end_btn.custom_minimum_size = Vector2(306, 42)
+	_end_btn = UI.btn("¡Terminar turno! ▶", Color("28b36a"), _end_turn, 20, 50)
+	_end_btn.position = Vector2(962, 184)
+	_end_btn.custom_minimum_size = Vector2(306, 50)
 	add_child(_end_btn)
 	_register("end_btn", _end_btn)
 	var mp := PanelContainer.new()
-	mp.position = Vector2(962, 238)
-	mp.custom_minimum_size = Vector2(306, 416)
-	mp.add_theme_stylebox_override("panel", UI.box(Color(0.04, 0.09, 0.22, 0.94), UI.BORDER, 2, 10, 8))
+	mp.position = Vector2(962, 244)
+	mp.custom_minimum_size = Vector2(306, 410)
+	mp.add_theme_stylebox_override("panel", UI.panel_box(0.96, UI.BORDER, 8))
 	add_child(mp)
+	_module_panel = mp
 	_register("module", mp)
 	var sc := ScrollContainer.new()
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED

@@ -32,6 +32,51 @@ Las misiones viven en `scripts/missions/MissionManager.gd` (una `MissionDef` por
 **Logros** (`AchievementManager`): Ingeniero de Campo, Escudo Humano, Agricultor Espacial, Maestro del Trade-off,
 Primera misión superada y Científico de datos.
 
+## Diseño infantil (7–12 años)
+
+La interfaz comunica con imágenes, iconos y animaciones (aprox. 80 % visual / 20 % texto) **sin quitar mecánicas ni datos
+de NASA**: el detalle sigue a un toque en «💡 ¿Sabías qué?» o con el cursor encima.
+
+- **Sistema de diseño** (`scripts/ui/UI.gd`, `KidKit.gd`, `KidText.gd`): letra redondeada Fredoka, bordes muy redondeados, sombras
+  suaves, botones en relieve que rebotan al pulsar, texto nunca menor de 14 px, estados con **color + símbolo** (✓ ⚠ ✗).
+- **Menú:** logo, astronauta, robot con globo de diálogo, base lunar con rover; botones JUGAR, Continuar y Ajustes.
+- **Misión:** la Luna, la base y la tripulación en discos ilustrados, una frase de objetivo, «proteges / sacrificas» en iconos y
+  3 viñetas de cómo jugar.
+- **Mapa:** 6 medidores grandes (💨 oxígeno, 💧 agua, ⚡ energía, 🍎 comida, 🛡️ protección, 🧱 materiales) con barra verde/amarilla/roja.
+  Al tocar un edificio sale su ventana: ilustración, nombre, estado, una frase, lo que da/gasta en iconos y botones de acción.
+- **Decisiones:** tarjetas ilustradas (máx. 3) con «▲ Ganas» y «▼ Gastas» en iconos, para comparar sin leer.
+- **Robot:** globo de dialogo, cambia la boca si el aire o la energía están en rojo y explica con analogías («los pulmones de la base»).
+
+- **Tutorial progresivo** (`scripts/game/TutorialGuide.gd`): el robot enseña cada cosa la primera vez que hace falta (energía, edificios,
+  invernadero, terminar turno, escudo) con un anillo que late, una flecha animada y un globo corto. No interrumpe ventanas y se puede
+  repetir con «❓ Repetir ayuda» o desde Ajustes.
+- **Alertas** con una escena animada por evento (`KidArt.gd`), el robot que lo cuenta en una frase, respuestas en tarjetas con iconos y
+  un resultado siempre amable («¡Se acabó el tiempo! Así se aprende.»). Cada alerta trae un dato curioso al terminar.
+- **Resumen de turno** con 4 tarjetas (aire, escudo, energía, comida) y flechas ▲▼; **alerta solar** con astronautas corriendo al refugio y
+  el dato de NASA con su etiqueta honesta (SIMULACIÓN EDUCATIVA / DATO HISTÓRICO).
+- **Pantalla final:** confeti y astronautas saltando si se gana, de 0 a 3 estrellas (`BaseState.stars()`), sistemas que aguantaron,
+  decisiones, logros y «Hoy aprendimos». Si no sale bien: «¡Buen intento, comandante!» y una pista de qué mejorar, sin castigo.
+
+## Alertas espaciales en tiempo real
+
+Durante cualquier misión pueden sonar **alertas de emergencia** a pantalla grande, con animación, cuenta regresiva
+(«IMPACTO EN 19 s») y tres respuestas. Todas tienen ventajas y desventajas con efectos reales (energía, materiales,
+radiación, aire, salud, paneles solares, horas de trabajo y puntuación). Si se acaba el tiempo se aplica la consecuencia
+por no responder. Teclas **1, 2, 3** eligen la opción. Los eventos son **SIMULACIÓN EDUCATIVA**; cada uno trae un «dato curioso».
+
+| Evento | Peligro | Qué pasa |
+|---|---|---|
+| 🌡️ Temperatura extrema · 🌑 Eclipse (paneles sin luz) | 1 | Regular el calor / gestionar la energía sin Sol |
+| 🔋 Fallo energético · ☄️ Meteorito cerca · ☀️ Llamarada solar | 2 | Priorizar sistemas, escudos o refugio |
+| ⚠️ Fuga de oxígeno · 🌠 Lluvia de meteoros | 3 | Reparar rápido o aislar el módulo |
+| 🌪️ Tormenta de polvo marciana | 2 | Solo en misiones de Marte (todavía en preparación) |
+
+Aparecen con **intervalos variables**, **30 s de espera mínima** entre alertas, un máximo por misión (2–4 según la
+dificultad), más probabilidad y menos tiempo en las misiones difíciles, y eventos más peligrosos al avanzar los turnos.
+No salen en el turno de la tormenta solar ni en el último, y se detienen al terminar o abandonar la misión. El modo 7–9 años
+da más tiempo, menos alertas y pérdidas un 25% menores. Código: `scripts/sim/SpaceEvents.gd` (catálogo y consecuencias),
+`AlertDirector.gd` (cuándo y cuál) y `scripts/game/AlertOverlay.gd` (pantalla).
+
 ## Operación: Refugio Lunar (simulación común)
 
 Gestionas una **base lunar**
@@ -81,10 +126,13 @@ godot --headless --path . res://scenes/SimTests.tscn        # equilibrio de los 
 godot --headless --path . res://scenes/MissionTests.tscn    # misiones, desbloqueo, logros y guardado JSON (sin red)
 godot --headless --path . res://scenes/UIPlaythrough.tscn   # misión completa por la interfaz (sin red)
 godot --headless --path . res://scenes/UILayoutTests.tscn   # interfaz movible y ocultable (sin red)
+godot --headless --path . res://scenes/AlertTests.tscn      # alertas espaciales: eventos, consecuencias, generación y pantalla (sin red)
+godot --headless --path . res://scenes/KidUITests.tscn      # interfaz infantil: iconos, tarjetas, medidores y textos legibles (sin red)
 godot --headless --path . res://scenes/ConnectionTests.tscn # conexión, caché y modo sin conexión (red real)
 ```
 
 ## Atribuciones
 
 Datos: NASA / GSFC / CCMC (DONKI), NASA EOSDIS GIBS, NASA LRO · Moon Trek, NASA EOSDIS / GHRC DAAC, NOAA SWPC.
+Fuentes incluidas (para que los iconos se vean también en la versión web): Fredoka (SIL OFL 1.1), Twemoji · Mozilla COLR (CC-BY 4.0) y DejaVu Sans (licencia libre Bitstream Vera), en `assets/fonts/` y cargadas por `scripts/FontSetup.gd`.
 Este proyecto no es un producto oficial de NASA ni está respaldado por NASA.

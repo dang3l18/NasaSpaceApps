@@ -19,7 +19,30 @@ func _check(c: bool, msg: String) -> void:
 		print("  [FALLO] " + msg)
 
 
+## Modo demostracion: `-- --demo=archivo.json` juega las 6 misiones en el orden de desbloqueo y deja
+## ese guardado en user:// (para sacar capturas de logros y misiones superadas).
+func _demo(file: String) -> void:
+	SaveStore.path = "user://" + file
+	SaveStore.enabled = true
+	SaveStore.delete_file()
+	MissionManager.reload()
+	for id in ["lunar_awakening", "storm_horizon", "lunar_blackout", "lava_harvest", "orbital_shadow", "thermal_anomaly"]:
+		var m := MissionManager.get_mission(id)
+		var open := MissionManager.is_unlocked(id) and MissionManager.select(id)
+		var r: Dictionary = _run(m, _best_picks(m), "equilibrado", 33) if open else {}
+		var res: Dictionary = MissionManager.finish_run(r["state"], true) if open else {}
+		print("%s | desbloqueada=%s | resultado=%s | motivo=%s | logros nuevos=%s" % [m.title, open,
+				"GANADA" if open and r["won"] else "no", (r["state"] as BaseState).reason if open else "", str(res.get("new_achievements", []))])
+	print("Guardado: ", ProjectSettings.globalize_path(SaveStore.path))
+	get_tree().quit(0)
+
+
 func _ready() -> void:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--demo="):
+			NasaBridge.event = {}
+			_demo(a.substr(7))
+			return
 	NasaBridge.event = {}
 	_real_path = SaveStore.path
 	SaveStore.path = "user://zyranth_test_save.json"
@@ -34,6 +57,7 @@ func _ready() -> void:
 	_test_intermediate_unlock()
 	_test_achievements()
 	_test_persistence()
+	_test_guide()
 	SaveStore.delete_file()
 	SaveStore.path = _real_path
 	MissionManager.reload()
@@ -405,6 +429,31 @@ func _test_achievements() -> void:
 
 
 # ------------------------------------------------------------- persistencia ----
+
+func _test_guide() -> void:
+	print("\nGuía adaptativa según las decisiones")
+	var m := MissionManager.get_mission("orbital_shadow")
+	var s := BaseState.new(false, m)
+	_check(GuideCoach.advice(s) == "", "sin decisiones la guía no inventa consejos")
+	s.turn = 4
+	s.decisions.append({"turn": 4, "title": "CALEFACCIÓN O TRANSMISIÓN", "choice": "Priorizar calor", "good": [], "bad": [], "sacrifice": "datos"})
+	s.sacrifices.append("datos")
+	var a1 := GuideCoach.advice(s)
+	_check(a1.contains("datos"), "tras sacrificar datos, la guía habla de los datos: «%s»" % a1)
+	s.decisions[0]["sacrifice"] = "calefacción"
+	var a2 := GuideCoach.advice(s)
+	_check(a2.contains("calefacción") and a2 != a1, "con otra decisión, el consejo cambia: «%s»" % a2)
+	s.decisions[0]["sacrifice"] = ""
+	_check(GuideCoach.advice(s).contains("Bien pensado"), "una decisión sin sacrificio se reconoce")
+	s.turn = 9   # ya paso la ventana de comentario y hay un indicador flojo
+	s.decisions.append({"turn": 4, "title": "x", "choice": "y", "good": [], "bad": [], "sacrifice": "alimentos"})
+	s.sacrifices.append_array(["alimentos", "alimentos"])
+	s.food = 0.0
+	s.plant_health = 5.0
+	var weak := GuideCoach.advice(s)
+	var low := GuideCoach._weakest(s)
+	_check((float(low[1]) >= 50.0 and weak == "") or weak.contains("punto más débil"), "con la ventana vencida orienta al punto más débil: «%s»" % weak)
+
 
 func _test_persistence() -> void:
 	print("\nPersistencia JSON")

@@ -17,6 +17,7 @@ config/features=PackedStringArray("4.7", "GL Compatibility")
 
 [autoload]
 
+FontSetup="*res://scripts/FontSetup.gd"
 NASADataManager="*res://scripts/data/NASADataManager.gd"
 DatasetManager="*res://scripts/data/DatasetManager.gd"
 ScientificDataManager="*res://scripts/data/ScientificDataManager.gd"

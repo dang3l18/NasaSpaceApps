@@ -4,3 +4,7 @@ export_presets.cfg
 # Claves locales: NUNCA al repositorio
 config/nasa_config.local.cfg
 .env
+
+# Exportaciones y capturas locales (no van al repositorio)
+build/
+capturas/

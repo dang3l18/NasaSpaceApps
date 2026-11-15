@@ -86,6 +86,12 @@ var breach_open := false    # fisura abierta en el blindaje (regla breach)
 var breach_progress := 0.0  # 0-100 sellado de la fisura
 var suit_o2 := 80.0         # oxigeno de los trajes de EVA
 
+# ---- alertas espaciales en tiempo real (SpaceEvents / AlertDirector) ----
+var alert_score := 0          # puntos por responder bien a las alertas (puede ser negativo)
+var alert_log: Array = []     # [{turn, id, title, choice, timed_out, score}]
+var solar_event_mult := 1.0   # reduccion temporal de los paneles por un evento (eclipse, polvo...)
+var solar_event_turns := 0    # turnos que dura
+
 # ---- seguimiento para los logros ----
 var min_ind := {"vida": 100.0, "proteccion": 100.0, "energia": 100.0, "alimentos": 100.0}
 var shield_at_alert := -1.0
@@ -145,7 +151,7 @@ func energy_total() -> float:
 
 
 func generation() -> float:
-	return panels * SimConfig.PANEL_OUTPUT * solar_factor if is_day() else 0.0
+	return panels * SimConfig.PANEL_OUTPUT * solar_factor * solar_event_mult if is_day() else 0.0
 
 
 func protection_factor(ratio_shelter: float = 1.0) -> float:
@@ -458,6 +464,10 @@ func step(plan: Dictionary) -> Dictionary:
 		forced_tasks = []
 	forced_led = -1
 	hours_penalty = 0
+	if solar_event_turns > 0:
+		solar_event_turns -= 1
+		if solar_event_turns == 0:
+			solar_event_mult = 1.0
 	ls_failure = false
 	scarcity = false
 	_check_end()
@@ -467,6 +477,12 @@ func step(plan: Dictionary) -> Dictionary:
 			_check_victory()
 	return {"before": before, "after": indicators(), "before_raw": before_raw, "msgs": msgs, "finished": finished, "won": won,
 			"prod": prod, "gen": gen, "load": total_supplied}
+
+
+## Comprueba derrota inmediata (las alertas usan limites que evitan llegar aqui; es una red de seguridad).
+func check_end_now() -> void:
+	if not finished:
+		_check_end()
 
 
 func _check_end() -> void:
@@ -515,6 +531,19 @@ func _check_victory() -> void:
 		_lose("final", "Llegaron al final, pero " + ", ".join(why) + ".")
 
 
+## Estrellas de la mision (0-3): 0 si no se supera; 1 por superarla; 2 si ningun sistema bajo de 12;
+## 3 si ninguno bajo de 30 y la radiacion final es baja. Es solo para celebrar, no cambia el progreso.
+func stars() -> int:
+	if not won:
+		return 0
+	var lowest := 100.0
+	for k in min_ind:
+		lowest = minf(lowest, float(min_ind[k]))
+	if lowest >= 30.0 and exposure < 50.0:
+		return 3
+	return 2 if lowest >= 12.0 else 1
+
+
 ## Resumen de la partida para logros y progreso (lo consume MissionManager).
 func run_stats() -> Dictionary:
 	return {
@@ -526,6 +555,7 @@ func run_stats() -> Dictionary:
 		"sacrifices": sacrifices.duplicate(), "decisions": decisions.size(),
 		"exposure": exposure, "health": health, "energy": energy_total(), "food": food,
 		"data_sent": data_sent, "breach_open": breach_open,
+		"alerts": alert_log.size(), "alert_score": alert_score,
 	}
 
 
