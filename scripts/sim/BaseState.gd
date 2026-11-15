@@ -15,6 +15,9 @@ const TASKS := {
 	"process": {"name": "Procesar regolito", "icon": "⛏", "hours": 4, "mat": 0, "energy": 40},
 	"fertilize": {"name": "Fertilizar", "icon": "🧪", "hours": 2, "mat": 4, "energy": 10},
 	"treat": {"name": "Atender a la tripulación", "icon": "🩺", "hours": 2, "mat": 0, "energy": 10},
+	# Tareas de misiones concretas (solo aparecen si la mision las usa)
+	"seal_breach": {"name": "Sellar la fisura (EVA)", "icon": "🔧", "hours": 6, "mat": 20, "energy": 0},
+	"recharge_suits": {"name": "Recargar trajes de EVA", "icon": "🧑‍🚀", "hours": 2, "mat": 0, "energy": 15},
 }
 const ROBOT_TASKS := ["build_shield", "build_shelter", "expand_bed", "expand_panel", "process"]
 const PROJECTS := {
@@ -62,9 +65,62 @@ var reason_id := ""
 var reason := ""
 var last_ratio: Dictionary = {}
 
+# ---- configuracion por mision (MissionDef) ----
+var mission: MissionDef
+var turns: int = SimConfig.TURNS
+var night_from: int = SimConfig.NIGHT_FROM_TURN
+var solar_factor := 1.0
+var control_on := true      # control apagado: no se pueden hacer obras ni investigar (ahorra energia)
+var habitat_on := true      # hogar apagado: la tripulacion pierde salud (ahorra energia)
+var led_cap := 2            # nivel maximo de luz permitido (una decision puede bajarlo)
+var rules: Dictionary = {}  # reglas propias de la mision (MissionDef.rules)
+var cons := 1.0             # modificador de consumo por turno (MissionDef.consumption_factor)
+var rng := RandomNumberGenerator.new()   # solo para los sucesos de riesgo; las pruebas fijan la semilla
 
-func _init(easy_mode: bool = false) -> void:
+# ---- mecanicas de misiones del nivel Intermedio ----
+var led_prev := 1           # nivel de luz del turno anterior (ciclos de luz)
+var heat_on := true         # calefaccion (regla heat_comms)
+var comms_on := true        # transmision de datos a la Tierra (regla heat_comms)
+var data_sent := 0          # paquetes de datos enviados
+var breach_open := false    # fisura abierta en el blindaje (regla breach)
+var breach_progress := 0.0  # 0-100 sellado de la fisura
+var suit_o2 := 80.0         # oxigeno de los trajes de EVA
+
+# ---- seguimiento para los logros ----
+var min_ind := {"vida": 100.0, "proteccion": 100.0, "energia": 100.0, "alimentos": 100.0}
+var shield_at_alert := -1.0
+var expanded_before_alert := false
+var sacrifices: Array = []
+
+const HEAT_LOAD := 35.0          # energia de la calefaccion por turno (mision Sombra Orbital)
+const COMMS_LOAD := 30.0         # energia de la transmision de datos por turno
+const HEAT_OFF_PENALTY := 16.0   # salud que pierde la tripulacion cada turno sin calefaccion (mision Sombra Orbital)
+const CONTROL_TASKS :=["build_shield", "build_shelter", "expand_bed", "expand_panel", "process", "research", "seal_breach"]
+
+
+func _init(easy_mode: bool = false, m: MissionDef = null) -> void:
 	easy = easy_mode
+	rng.randomize()
+	if m != null:
+		mission = m
+		rules = m.rules
+		cons = m.consumption_factor
+		turns = m.turns
+		night_from = m.night_from_turn
+		alert_turn = m.alert_turn
+		solar_factor = m.solar_factor
+		for k in m.start:
+			match k:
+				"main": main = float(m.start[k])
+				"backup": backup = float(m.start[k])
+				"materials": materials = float(m.start[k])
+				"shield": shield = float(m.start[k])
+				"shelter": shelter = float(m.start[k])
+				"food": food = float(m.start[k])
+				"health": health = float(m.start[k])
+				"panels": panels = int(m.start[k])
+				"beds": beds = int(m.start[k])
+				"ls_cond": ls_cond = float(m.start[k])
 
 
 # ---------------------------------------------------------------- consultas ----
@@ -74,7 +130,7 @@ func day_number() -> int:
 
 
 func is_day() -> bool:
-	return turn < SimConfig.NIGHT_FROM_TURN
+	return turn < night_from
 
 
 func hours_budget() -> int:
@@ -89,12 +145,25 @@ func energy_total() -> float:
 
 
 func generation() -> float:
-	return panels * SimConfig.PANEL_OUTPUT if is_day() else 0.0
+	return panels * SimConfig.PANEL_OUTPUT * solar_factor if is_day() else 0.0
 
 
 func protection_factor(ratio_shelter: float = 1.0) -> float:
 	var shelter_eff := shelter * (0.4 + 0.6 * ratio_shelter)
-	return 0.55 * shield / 100.0 + 0.45 * shelter_eff / 100.0
+	var shield_eff := shield * (0.4 if breach_open else 1.0)   # una fisura abierta deja pasar la radiacion
+	return 0.55 * shield_eff / 100.0 + 0.45 * shelter_eff / 100.0
+
+
+func rule(key: String, default: Variant) -> Variant:
+	return rules.get(key, default)
+
+
+## Algunas tareas solo existen en misiones concretas.
+func task_visible(id: String) -> bool:
+	match id:
+		"seal_breach": return bool(rule("breach", false)) and breach_open
+		"recharge_suits": return bool(rule("breach", false))
+	return true
 
 
 func task_cost(id: String) -> Dictionary:
@@ -116,11 +185,17 @@ func all_tasks(plan: Dictionary) -> Array:
 	for t in plan.get("tasks", []):
 		if not (t in out) and TASKS.has(t):
 			out.append(t)
+	if not control_on:   # sin control no hay obras ni investigacion
+		out = out.filter(func(t: String) -> bool: return not (t in CONTROL_TASKS))
+	out = out.filter(func(t: String) -> bool: return task_visible(t))
+	if "seal_breach" in out and suit_o2 < 30.0:   # sin oxigeno en los trajes no hay EVA
+		out.erase("seal_breach")
 	return out
 
 
 func led_level(plan: Dictionary) -> int:
-	return forced_led if forced_led >= 0 else clampi(int(plan.get("led", led)), 0, 2)
+	var lv := forced_led if forced_led >= 0 else clampi(int(plan.get("led", led)), 0, 2)
+	return mini(lv, led_cap)
 
 
 func led_load(level: int) -> float:
@@ -174,14 +249,28 @@ func indicators() -> Dictionary:
 # ------------------------------------------------------------------ turno ----
 
 func _loads_list(tasks: Array, level: int) -> Array:
-	var f := 0.7 if saving else 1.0
-	var l: Array = [["ls", SimConfig.LOAD_LS]]
+	var f := (0.7 if saving else 1.0) * cons
+	var l: Array = []
+	if "seal_breach" in tasks:
+		# La soldadura desvia energia del soporte vital: tiene prioridad y el aire funciona a media potencia.
+		l.append(["seal", 60.0])
+		l.append(["ls", SimConfig.LOAD_LS * 0.5])
+	else:
+		l.append(["ls", SimConfig.LOAD_LS])
 	if turn == alert_turn and alert_tier > 0:
 		l.append(["shelter", SimConfig.LOAD_SHELTER])
-	l.append(["control", SimConfig.LOAD_CONTROL * f])
-	l.append(["habitat", SimConfig.LOAD_HABITAT * f])
+	if bool(rule("heat_comms", false)) and heat_on:
+		l.append(["heat", HEAT_LOAD])
+	if control_on:
+		l.append(["control", SimConfig.LOAD_CONTROL * f])
+	if habitat_on:
+		l.append(["habitat", SimConfig.LOAD_HABITAT * f])
+	if bool(rule("heat_comms", false)) and comms_on:
+		l.append(["comms", COMMS_LOAD])
 	if level > 0:
 		l.append(["led", led_load(level)])
+	if "recharge_suits" in tasks:
+		l.append(["recharge_suits", float(task_cost("recharge_suits")["energy"])])
 	for tid in ["fertilize", "treat", "process", "research"]:
 		if tid in tasks:
 			l.append([tid, float(task_cost(tid)["energy"])])
@@ -234,16 +323,27 @@ func step(plan: Dictionary) -> Dictionary:
 	# --- Soporte vital + contribucion parcial de las plantas
 	var eff := (ls_cond / 100.0) * float(ratio.get("ls", 1.0)) * (0.5 if ls_failure else 1.0)
 	var lightf := float(SimConfig.LIGHT[level]) * float(ratio.get("led", 1.0))
+	var light_stress := false
+	if bool(rule("light_cycle", false)) and level == 2:
+		if led_prev == 0:   # tras un turno a oscuras, la luz alta da un impulso de crecimiento
+			lightf *= 1.35
+			msgs.append("☀ Ciclo de luz: tras la oscuridad, las plantas crecen más.")
+		elif led_prev == 2:   # dos turnos seguidos de luz alta estresan a las plantas
+			light_stress = true
+			msgs.append("🥀 Dos turnos seguidos de luz alta estresan a las plantas. Alterna con oscuridad.")
 	var g := (beds / 3.0) * lightf * plant_health / 100.0
-	o2 = clampf(o2 + SimConfig.O2_LS * eff + SimConfig.O2_PLANTS * g - SimConfig.O2_USE, 0.0, 100.0)
+	var lso := float(rule("ls_output", 1.0))     # el soporte vital de la mision puede rendir menos oxigeno
+	var po2 := float(rule("plant_o2", 1.0))      # y las plantas pueden aportar mas
+	o2 = clampf(o2 + SimConfig.O2_LS * eff * lso + SimConfig.O2_PLANTS * po2 * g - SimConfig.O2_USE * cons, 0.0, 100.0)
 	co2 = clampf(co2 + SimConfig.CO2_GEN - SimConfig.CO2_LS * eff - SimConfig.CO2_PLANTS * g, 0.0, 100.0)
-	water = clampf(water + SimConfig.WATER_LS * eff + SimConfig.WATER_PLANTS_RETURN * g - SimConfig.WATER_USE
+	water = clampf(water + SimConfig.WATER_LS * eff + SimConfig.WATER_PLANTS_RETURN * g - SimConfig.WATER_USE * cons
 			- SimConfig.WATER_PLANTS_USE * beds * lightf, 0.0, 100.0)
+	led_prev = level
 
 	# --- Alimentos
 	var nutr_f := 1.0 if nutrients >= 20.0 else (0.5 if nutrients > 0.0 else 0.1)
 	var prod := beds * SimConfig.FOOD_PER_BED * lightf * plant_health / 100.0 * nutr_f
-	food = clampf(food + prod - SimConfig.FOOD_USE, 0.0, 100.0)
+	food = clampf(food + prod - SimConfig.FOOD_USE * cons, 0.0, 100.0)
 	starve_turns = starve_turns + 1 if food <= 0.0 else 0
 	if food <= 0.0:
 		msgs.append("¡Se acabó la comida!")
@@ -253,6 +353,8 @@ func step(plan: Dictionary) -> Dictionary:
 		plant_health += 15.0
 	else:
 		plant_health -= 12.0
+	if light_stress:
+		plant_health -= 10.0
 	if water < 20.0:
 		plant_health -= 8.0
 	nutrients -= 3.0 * beds / 3.0
@@ -275,6 +377,8 @@ func step(plan: Dictionary) -> Dictionary:
 		shelter = minf(100.0, shelter + SimConfig.SHELTER_BUILD)
 	if "expand_bed" in tasks:
 		beds = mini(5, beds + 1)
+		if alert_turn <= 0 or turn < alert_turn:
+			expanded_before_alert = true   # priorizo produccion antes de la alerta (lo mira el logro Escudo Humano)
 	if "expand_panel" in tasks:
 		panels = mini(SimConfig.PANELS_MAX, panels + 1)
 
@@ -291,12 +395,41 @@ func step(plan: Dictionary) -> Dictionary:
 			research_project = ""
 			research_progress = 0.0
 
+	# --- Fisura del blindaje (EVA): sellar gasta oxigeno de los trajes; recargarlos gasta aire de la base
+	if "seal_breach" in tasks:
+		breach_progress += 50.0 * float(ratio.get("seal", 1.0))
+		suit_o2 = maxf(0.0, suit_o2 - 30.0)
+		if breach_progress >= 100.0:
+			breach_open = false
+			msgs.append("🔧 ¡Fisura sellada! El blindaje vuelve a proteger.")
+		else:
+			msgs.append("🔧 Sellado de la fisura al %d%%. Falta otra salida EVA." % int(breach_progress))
+	if "recharge_suits" in tasks:
+		suit_o2 = minf(100.0, suit_o2 + 30.0 * float(ratio.get("recharge_suits", 1.0)))
+		o2 = maxf(0.0, o2 - 8.0)
+		msgs.append("🧑‍🚀 Trajes recargados: +30 de oxígeno (−8 de aire de la base).")
+
+	# --- Calefaccion y transmision de datos (regla heat_comms)
+	if bool(rule("heat_comms", false)):
+		if not heat_on or float(ratio.get("heat", 1.0)) < 0.99:
+			health -= HEAT_OFF_PENALTY
+			ls_cond = maxf(0.0, ls_cond - 3.0)
+			msgs.append("❄ Sin calefacción: la tripulación pierde %d de salud." % int(HEAT_OFF_PENALTY))
+		else:
+			health += 2.0
+		if comms_on and float(ratio.get("comms", 1.0)) >= 0.99:
+			data_sent += 1
+			msgs.append("📡 Datos enviados a la Tierra (%d)." % data_sent)
+
 	# --- Radiacion: ambiente + alerta solar
 	var pf := protection_factor(float(ratio.get("shelter", 1.0)))
 	exposure += SimConfig.AMBIENT_EXPOSURE * (1.0 - 0.5 * pf)
+	if breach_open:
+		exposure += 4.0   # por la fisura entra radiacion todos los turnos
 	if turn == alert_turn and alert_tier > 0:
 		var base: float = float(SimConfig.ALERT_EXPOSURE[alert_tier]) * (SimConfig.EASY_ALERT_FACTOR if easy else 1.0)
 		var dose := base * (1.0 - pf)
+		shield_at_alert = shield
 		exposure += dose
 		msgs.append("Alerta solar: el blindaje y el refugio frenaron %d%% de la exposición." % int(pf * 100.0))
 	if "treat" in tasks:
@@ -304,13 +437,21 @@ func step(plan: Dictionary) -> Dictionary:
 	exposure = clampf(exposure, 0.0, 150.0)
 
 	# --- Salud de la tripulacion
-	health += 6.0 if float(ratio.get("habitat", 1.0)) > 0.99 else 2.0
+	if not habitat_on:
+		health -= 4.0   # sin calefaccion ni luz del hogar la tripulacion se resiente
+	else:
+		health += 6.0 if float(ratio.get("habitat", 1.0)) > 0.99 else 2.0
 	if co2 > 60.0: health -= 10.0
 	if o2 < 30.0: health -= 15.0
 	if exposure > 50.0: health -= 8.0
 	if food <= 0.0: health -= 10.0
 	if "treat" in tasks: health += 20.0
 	health = clampf(health, 0.0, 100.0)
+
+	# --- Seguimiento de minimos (logros): estado de los 4 sistemas al terminar el turno
+	var ind_now := indicators()
+	for k in min_ind:
+		min_ind[k] = minf(float(min_ind[k]), float(ind_now[k]))
 
 	# --- Fin de turno
 	for k in ["forced_tasks"]:
@@ -322,7 +463,7 @@ func step(plan: Dictionary) -> Dictionary:
 	_check_end()
 	if not finished:
 		turn += 1
-		if turn > SimConfig.TURNS:
+		if turn > turns:
 			_check_victory()
 	return {"before": before, "after": indicators(), "before_raw": before_raw, "msgs": msgs, "finished": finished, "won": won,
 			"prod": prod, "gen": gen, "load": total_supplied}
@@ -342,18 +483,86 @@ func _check_end() -> void:
 func _check_victory() -> void:
 	var ok := o2 >= 30.0 and co2 <= 70.0 and exposure < SimConfig.EXPOSURE_WIN_MAX \
 			and energy_total() >= 60.0 and food >= SimConfig.FOOD_WIN_MIN
+	var extra_why: PackedStringArray = []
+	if mission != null:
+		var ex := mission.win_extra
+		if ex.has("max_exposure") and exposure > float(ex["max_exposure"]):
+			ok = false
+			extra_why.append("la radiación recibida superó el límite de la misión")
+		if ex.has("min_health") and health < float(ex["min_health"]):
+			ok = false
+			extra_why.append("la tripulación quedó demasiado cansada o enferma")
+		if ex.has("min_energy") and energy_total() < float(ex["min_energy"]):
+			ok = false
+			extra_why.append("faltó energía de reserva")
+		if ex.has("min_data") and data_sent < int(ex["min_data"]):
+			ok = false
+			extra_why.append("solo enviaste %d de %d paquetes de datos a la Tierra" % [data_sent, int(ex["min_data"])])
+		if bool(rule("breach", false)) and breach_open:
+			ok = false
+			extra_why.append("la fisura del blindaje quedó sin sellar")
 	if ok:
 		finished = true
 		won = true
 		reason_id = "win"
 		reason = "¡La base lunar sobrevivió los 3 días!"
 	else:
-		var why: PackedStringArray = []
+		var why: PackedStringArray = extra_why.duplicate()
 		if o2 < 30.0 or co2 > 70.0: why.append("el aire quedó en mal estado")
 		if exposure >= SimConfig.EXPOSURE_WIN_MAX: why.append("la tripulación recibió mucha radiación")
 		if energy_total() < 60.0: why.append("casi no quedó energía de reserva")
 		if food < SimConfig.FOOD_WIN_MIN: why.append("la comida no alcanzó para seguir")
 		_lose("final", "Llegaron al final, pero " + ", ".join(why) + ".")
+
+
+## Resumen de la partida para logros y progreso (lo consume MissionManager).
+func run_stats() -> Dictionary:
+	return {
+		"mission": mission.id if mission != null else "",
+		"won": won, "turns": turns,
+		"min_ind": min_ind.duplicate(), "min_food": float(min_ind["alimentos"]),
+		"alert_tier": alert_tier, "shield_at_alert": shield_at_alert,
+		"expanded_before_alert": expanded_before_alert,
+		"sacrifices": sacrifices.duplicate(), "decisions": decisions.size(),
+		"exposure": exposure, "health": health, "energy": energy_total(), "food": food,
+		"data_sent": data_sent, "breach_open": breach_open,
+	}
+
+
+## Riesgos que el jugador debe ver ANTES de confirmar el turno. Cada uno: {lvl, text}
+## lvl: 0 = peligro, 1 = ojo, 2 = bonus.
+func risks(plan: Dictionary) -> Array:
+	var out: Array = []
+	var tasks := all_tasks(plan)
+	var level := led_level(plan)
+	var pv := preview(plan)
+	var need: float = pv["energy_load"]
+	var have: float = pv["energy_have"]
+	if need > have:
+		out.append({"lvl": 0, "text": "Falta energía: se apagará lo menos importante"})
+	elif not is_day() and have - need < 120.0:
+		out.append({"lvl": 1, "text": "Quedará poca energía para el próximo turno"})
+	if ls_cond < 55.0:
+		out.append({"lvl": 1, "text": "Soporte vital muy desgastado: riesgo de fallo"})
+	if bool(rule("heat_comms", false)):
+		if not heat_on:
+			out.append({"lvl": 0, "text": "Sin calefacción: la salud baja %d este turno" % int(HEAT_OFF_PENALTY)})
+		if not comms_on:
+			out.append({"lvl": 1, "text": "Sin transmisión: no se enviarán datos (%d de %d)" % [data_sent, int(mission.win_extra.get("min_data", 0))]})
+	if breach_open:
+		out.append({"lvl": 0, "text": "Fisura abierta: el blindaje protege solo el 40%"})
+	if "seal_breach" in tasks:
+		out.append({"lvl": 1, "text": "Sellar desvía energía del soporte vital (aire a media potencia) y gasta 30 de oxígeno de los trajes"})
+	if bool(rule("breach", false)) and breach_open and suit_o2 < 30.0:
+		out.append({"lvl": 0, "text": "Los trajes no tienen oxígeno para una EVA: recárgalos"})
+	if bool(rule("light_cycle", false)):
+		if level == 2 and led_prev == 2:
+			out.append({"lvl": 1, "text": "Dos turnos seguidos de luz alta estresan a las plantas"})
+		elif level == 2 and led_prev == 0:
+			out.append({"lvl": 2, "text": "Impulso de crecimiento: luz alta tras oscuridad"})
+	if alert_turn > 0 and turn < alert_turn and alert_tier > 0 and protection_factor() < 0.5:
+		out.append({"lvl": 1, "text": "La protección aún es baja para la tormenta del turno %d" % alert_turn})
+	return out
 
 
 func _lose(id: String, text: String) -> void:

@@ -47,6 +47,13 @@ var _moon_note := ""
 var _tip_idx := 0
 var _event_locked := false
 var _simulated := false   # true en las pruebas automaticas: no guarda logros
+var _extra_label: Label
+var _risk_panel: PanelContainer
+var _risk_box: VBoxContainer
+var _ui := {}             # id -> {node, def}: paneles y botones movibles/ocultables
+var _move_mode := false
+var _overlays := {}
+var _settings_root: Control
 var _robot_hop := 0.0
 var _last_tip := ""
 var _info_open := false
@@ -56,11 +63,21 @@ var _intro_pending := false
 
 func _ready() -> void:
 	randomize()
-	s = BaseState.new(GameSettings.mode == "principiante")
+	var mdef: MissionDef = MissionManager.current
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--mission="):   # solo para pruebas: elegir mision sin pasar por el menu
+			var forced := MissionManager.get_mission(a.substr(10))
+			if forced != null:
+				mdef = forced
+				MissionManager.current = forced
+	NasaBridge.forced_min = mdef.alert_tier_min
+	s = BaseState.new(GameSettings.mode == "principiante", mdef)
+	if not _simulated:
+		MissionManager.begin_run()
 	plan["led"] = s.led
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--turn="):
-			s.turn = clampi(int(a.substr(7)), 1, SimConfig.TURNS)
+			s.turn = clampi(int(a.substr(7)), 1, s.turns)
 	_gen_terrain()
 	_build_ui()
 	_load_data()
@@ -479,6 +496,8 @@ func _refresh_module_panel() -> void:
 	if selected == "lab":
 		_lab_controls()
 	for tid in d["tasks"]:
+		if not s.task_visible(tid):
+			continue
 		_module_box.add_child(_task_button(tid))
 	_info_section(d)
 
@@ -535,7 +554,7 @@ func _flow_text(id: String) -> String:
 		"shelter": return "⚡ 40 solo en alertas · 🧱 materiales para ampliar"
 		"main_energy": return "☀ Genera %d este turno · Todo lo demás gasta de aquí" % s.generation()
 		"backup_energy": return "Reserva de emergencia: úsala con cuidado"
-		"panels": return "☀ +%d por turno de día · 0 de noche" % (s.panels * SimConfig.PANEL_OUTPUT)
+		"panels": return "☀ +%d por turno de día · 0 de noche" % (s.panels * SimConfig.PANEL_OUTPUT * s.solar_factor)
 		"processing": return "⚡ 40 · ⏱ 3h (con robot) → materiales +30"
 		"lab": return "⚡ 50 · ⏱ 4h → investigación +50%"
 		"infirmary": return "⚡ 10 · ⏱ 2h → salud +20 y menos radiación"
@@ -557,6 +576,9 @@ func _task_button(tid: String) -> Button:
 		b.disabled = not s.can_afford(test)
 	if forced:
 		b.disabled = true
+	if tid in BaseState.CONTROL_TASKS and not s.control_on:
+		b.disabled = true
+		b.text += "\n(el Control está apagado)"
 	b.pressed.connect(_toggle_task.bind(tid))
 	return b
 
@@ -575,14 +597,28 @@ func _led_selector() -> void:
 	for i in 3:
 		var b := UI.btn(names[i], Color("1f9f55") if cur == i else Color("245aa8"), _set_led.bind(i), 12, 44)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		b.disabled = s.forced_led >= 0 and cur != i
+		b.disabled = (s.forced_led >= 0 and cur != i) or i > s.led_cap
 		row.add_child(b)
+	if s.led_cap < 2:
+		_module_box.add_child(UI.lbl("Por una decisión, las luces no pueden pasar del nivel %d." % s.led_cap, 12, Color("ffd9a0"), true, 250))
 
 
 func _command_controls() -> void:
 	var b := UI.btn(("🔋 Ahorro de energía: ACTIVO" if s.saving else "🔋 Ahorro de energía: apagado"), Color("1f9f55") if s.saving else Color("245aa8"), _toggle_saving, 13, 40)
 	_module_box.add_child(b)
 	_module_box.add_child(UI.lbl("Ahorro: −30% en control y hogar, pero el laboratorio y los materiales rinden la mitad.", 12, UI.MUTED, true, 250))
+	_module_box.add_child(UI.lbl("🔌 Subsistemas (apagar ahorra energía, pero tiene un coste):", 13, UI.GOLD, true, 250))
+	_module_box.add_child(UI.btn("🖥 Control: %s (⚡%d)" % ["ENCENDIDO" if s.control_on else "APAGADO", SimConfig.LOAD_CONTROL * (0.7 if s.saving else 1.0)],
+			Color("1f9f55") if s.control_on else Color("a83a3a"), _toggle_control, 13, 36))
+	_module_box.add_child(UI.btn("🏠 Hogar: %s (⚡%d)" % ["ENCENDIDO" if s.habitat_on else "APAGADO", SimConfig.LOAD_HABITAT * (0.7 if s.saving else 1.0)],
+			Color("1f9f55") if s.habitat_on else Color("a83a3a"), _toggle_habitat, 13, 36))
+	_module_box.add_child(UI.lbl("Sin Control no hay obras ni investigación. Sin Hogar la tripulación pierde salud cada turno.", 11, UI.MUTED, true, 250))
+	if bool(s.rule("heat_comms", false)):
+		_module_box.add_child(UI.btn("❄ Calefacción: %s (⚡35)" % ("ENCENDIDA" if s.heat_on else "APAGADA"),
+				Color("1f9f55") if s.heat_on else Color("a83a3a"), _toggle_heat, 13, 36))
+		_module_box.add_child(UI.btn("📡 Transmisión a la Tierra: %s (⚡30)" % ("ENCENDIDA" if s.comms_on else "APAGADA"),
+				Color("1f9f55") if s.comms_on else Color("a83a3a"), _toggle_comms, 13, 36))
+		_module_box.add_child(UI.lbl("Datos enviados: %d de %d. Sin calefacción la salud baja 16 por turno; sin transmisión no se envían datos." % [s.data_sent, int(s.mission.win_extra.get("min_data", 0))], 11, UI.MUTED, true, 250))
 	var nb := PanelContainer.new()
 	nb.add_theme_stylebox_override("panel", UI.box(Color("1a1330"), UI.SIM, 2, 8, 6))
 	var nv := VBoxContainer.new()
@@ -592,6 +628,34 @@ func _command_controls() -> void:
 	nv.add_child(UI.lbl(NasaBridge.headline() if _event_loaded else "Consultando DONKI…", 12, UI.TEXT, true, 240))
 	nv.add_child(UI.lbl(NasaBridge.mapping_text() if _event_loaded else "", 11, UI.MUTED, true, 240))
 	_module_box.add_child(nb)
+
+
+func _toggle_control() -> void:
+	s.control_on = not s.control_on
+	if not s.control_on:
+		plan["tasks"] = (plan["tasks"] as Array).filter(func(t: String) -> bool: return not (t in BaseState.CONTROL_TASKS))
+		_tip.text = "Control apagado: ahorras energía, pero no puedes hacer obras ni investigar."
+	else:
+		_tip.text = "Control encendido otra vez: gasta energía, pero puedes construir."
+	_refresh_all()
+
+
+func _toggle_heat() -> void:
+	s.heat_on = not s.heat_on
+	_tip.text = "Sin calefacción la tripulación pasa frío: la salud baja." if not s.heat_on else "Calefacción encendida: gasta ⚡ 35 por turno."
+	_refresh_all()
+
+
+func _toggle_comms() -> void:
+	s.comms_on = not s.comms_on
+	_tip.text = "Transmisión apagada: no se envían datos a la Tierra." if not s.comms_on else "Transmisión encendida: gasta ⚡ 30 y envía datos."
+	_refresh_all()
+
+
+func _toggle_habitat() -> void:
+	s.habitat_on = not s.habitat_on
+	_tip.text = "Hogar apagado: la tripulación pierde salud cada turno." if not s.habitat_on else "Hogar encendido: la tripulación descansa mejor."
+	_refresh_all()
 
 
 func _toggle_saving() -> void:
@@ -628,8 +692,10 @@ func _refresh_all() -> void:
 	_world.queue_redraw()
 	_night.color.a = 0.0 if s.is_day() else 0.5
 	_map.modulate = Color.WHITE if s.is_day() else Color(0.86, 0.9, 1.0)
-	_title_label.text = "DÍA %d · TURNO %d/%d" % [s.day_number(), mini(s.turn, SimConfig.TURNS), SimConfig.TURNS]
-	_phase_label.text = ("☀ " if s.is_day() else "🌙 ") + PHASE_NAMES[(mini(s.turn, SimConfig.TURNS) - 1) % 3] + (" · luz solar" if s.is_day() else " · sin luz solar")
+	_extra_label.text = _extra_text()
+	_extra_label.visible = _extra_label.text != ""
+	_title_label.text = "DÍA %d · TURNO %d/%d" % [s.day_number(), mini(s.turn, s.turns), s.turns]
+	_phase_label.text = ("☀ " if s.is_day() else "🌙 ") + PHASE_NAMES[(mini(s.turn, s.turns) - 1) % 3] + (" · luz solar" if s.is_day() else " · sin luz solar")
 
 
 func _refresh_indicators() -> void:
@@ -660,6 +726,37 @@ func _refresh_budget() -> void:
 	_warn.text = str(pv["why"])
 	if e_use > e_have:
 		_warn.text = "Falta energía: se apagará lo menos importante"
+	_refresh_risks()
+
+
+## Panel de riesgos: muestra el peligro de las decisiones del turno ANTES de confirmarlas.
+func _refresh_risks() -> void:
+	for c in _risk_box.get_children():
+		c.queue_free()
+	var rs := s.risks(plan)
+	_risk_panel.modulate.a = 1.0 if rs.size() > 0 else 0.0
+	_risk_panel.mouse_filter = Control.MOUSE_FILTER_STOP if rs.size() > 0 else Control.MOUSE_FILTER_IGNORE
+	var shown := 0
+	for r in rs:
+		if shown >= 3:
+			break
+		var col: Color = [UI.RED, UI.YELLOW, UI.GREEN][int(r["lvl"])]
+		var icon: String = ["⛔", "⚠", "✨"][int(r["lvl"])]
+		_risk_box.add_child(UI.lbl("%s %s" % [icon, r["text"]], 13, col, true, 640))
+		shown += 1
+
+
+## Linea de estado propia de cada mision (datos enviados, trajes, fisura, ciclo de luz...).
+func _extra_text() -> String:
+	if bool(s.rule("heat_comms", false)):
+		return "📡 Datos enviados: %d de %d  ·  ❄ Calefacción %s" % [s.data_sent, int(s.mission.win_extra.get("min_data", 0)), "ON" if s.heat_on else "apagada"]
+	if bool(s.rule("breach", false)):
+		var f := "ABIERTA (%d%% sellada)" % int(s.breach_progress) if s.breach_open else ("cerrada" if s.turn > 4 else "sin daños")
+		return "🧑‍🚀 Trajes O₂: %d  ·  🔧 Fisura: %s" % [s.suit_o2, f]
+	if bool(s.rule("light_cycle", false)):
+		var tip := "alta" if s.led_prev == 2 else ("apagada" if s.led_prev == 0 else "normal")
+		return "💡 Última luz: %s  ·  Alterna alta/oscuridad" % tip
+	return ""
 
 
 func _set_budget(key: String, used: float, avail: float, text: String) -> void:
@@ -718,7 +815,7 @@ func _begin_turn(skip_intro: bool = false) -> void:
 	else:
 		if news.size() > 0:
 			_show_banner(str(news[0]))
-		if s.turn == SimConfig.ALERT_TURN:
+		if s.alert_turn > 0 and s.turn == s.alert_turn:
 			_show_alert_modal(news)
 
 
@@ -726,7 +823,13 @@ func _show_intro() -> void:
 	_intro_pending = true
 	await _wait_moon()
 	_intro_pending = false
-	var v := _modal("OPERACIÓN: REFUGIO LUNAR", UI.GOLD, 720)
+	var v := _modal(s.mission.title.to_upper(), UI.GOLD, 740)
+	var diff := UI.lbl("Nivel %s · %s  Dificultad: %s" % [s.mission.tier_label(), s.mission.stars(), s.mission.difficulty_label()], 14, s.mission.difficulty_color())
+	diff.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(diff)
+	var mods := UI.lbl("Modificadores: " + s.mission.modifiers_text(), 12, UI.MUTED)
+	mods.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(mods)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
 	v.add_child(row)
@@ -744,10 +847,11 @@ func _show_intro() -> void:
 	var info := VBoxContainer.new()
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(info)
-	info.add_child(UI.lbl("Tu base está en la Luna. Sobrevive 3 días (9 turnos).", 17, UI.TEXT, true, 380))
-	for r in [["💨", "Soporte vital: aire y agua"], ["🛡", "Protección contra la radiación"], ["⚡", "Energía para todo"], ["🌱", "Alimentos de tus plantas"]]:
-		info.add_child(UI.lbl("%s  %s" % [r[0], r[1]], 16, UI.TEXT))
-	info.add_child(UI.lbl("Todo compite por ⚡ energía, 🧱 materiales y ⏱ horas. Mejorar una parte puede dañar otra.", 14, Color("ffd9a0"), true, 380))
+	info.add_child(UI.lbl(s.mission.summary, 15, UI.TEXT, true, 380))
+	info.add_child(UI.lbl("⚖ DILEMA: " + s.mission.dilemma_title, 15, UI.GOLD, true, 380))
+	info.add_child(UI.lbl("🛡 Proteges: " + s.mission.protect, 13, UI.GREEN, true, 380))
+	info.add_child(UI.lbl("✂ Sacrificas: " + s.mission.sacrifice, 13, Color("ff9d6d"), true, 380))
+	info.add_child(UI.lbl("Todo compite por ⚡ energía, 🧱 materiales y ⏱ horas. Mejorar una parte puede dañar otra.", 13, Color("ffd9a0"), true, 380))
 	v.add_child(UI.lbl("🤖 «¡Hola, Comandante! Toca los módulos de la base y elige qué hacer cada turno.»", 14, UI.MUTED, true, 600))
 	v.add_child(UI.btn("¡Empezar misión!", Color("1f9f55"), func() -> void:
 		_close_modal()
@@ -775,6 +879,8 @@ func _show_card(card: Dictionary, news: Array) -> void:
 			txt += "\n✔ %s" % g
 		for b in o.get("bad", []):
 			txt += "\n✘ %s" % b
+		if o.has("risk"):
+			txt += "\n\n⚠ RIESGO: %s" % o["risk"]
 		var cb := Button.new()
 		cb.toggle_mode = true
 		cb.text = txt
@@ -796,7 +902,9 @@ func _show_card(card: Dictionary, news: Array) -> void:
 			for j in buttons.size():
 				(buttons[j] as Button).button_pressed = j == i)
 	ok.pressed.connect(func() -> void:
-		MissionDirector.choose(s, card, int(choice["i"]))
+		var idx := int(choice["i"])
+		MissionDirector.choose(s, card, idx)
+		MissionManager.decision_made.emit(str(card["id"]), idx, str((card["options"][idx] as Dictionary).get("sacrifice", "")))
 		_close_modal()
 		plan["led"] = s.forced_led if s.forced_led >= 0 else s.led
 		_refresh_all()
@@ -860,10 +968,15 @@ func _show_report(turn_done: int, r: Dictionary) -> void:
 
 
 func _show_end() -> void:
-	if not _simulated and not ("--shot=" in "".join(OS.get_cmdline_user_args())):
-		Progress.record_game(s.won, GameSettings.mode, s.shield >= 65.0, NasaBridge.alert_tier())
+	var persist := not _simulated and not ("--shot=" in "".join(OS.get_cmdline_user_args()))
+	var res: Dictionary = MissionManager.finish_run(s, persist)
 	var v := _modal("¡MISIÓN COMPLETADA!" if s.won else "MISIÓN NO COMPLETADA", UI.GOLD if s.won else UI.RED, 760)
 	v.add_child(UI.lbl(s.reason, 17, UI.TEXT, true, 680))
+	for id in res["new_achievements"]:
+		var d := AchievementManager.def_of(id)
+		v.add_child(UI.lbl("🏆 ¡Logro desbloqueado: %s %s!" % [d.get("icon", ""), d.get("name", id)], 16, UI.GOLD, true, 680))
+	for id in res["unlocked_missions"]:
+		v.add_child(UI.lbl("🔓 Misión desbloqueada: %s" % MissionManager.get_mission(id).title, 16, UI.GREEN, true, 680))
 	var ind := s.indicators()
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
@@ -883,7 +996,10 @@ func _show_end() -> void:
 	b1.add_theme_constant_override("separation", 8)
 	v.add_child(b1)
 	for bb in [["Jugar de nuevo", Color("1f9f55"), func() -> void: get_tree().reload_current_scene()],
-			["Space Data Center", Color("1f6fd0"), _open_data_center], ["Menú principal", Color("245aa8"), _go_menu]]:
+			["Elegir misión", Color("e0a02f"), func() -> void:
+				GameSettings.start_screen = "missions"
+				_go_menu()],
+			["Space Data Center", Color("1f6fd0"), _open_data_center], ["Menú", Color("245aa8"), _go_menu]]:
 		var btn := UI.btn(bb[0], bb[1], bb[2], 15, 44)
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b1.add_child(btn)
@@ -894,7 +1010,8 @@ func _go_menu() -> void:
 
 
 func _open_data_center() -> void:
-	Progress.unlock("data_scientist")
+	if not _simulated:
+		AchievementManager.unlock("data_scientist")
 	var dc: Control = load("res://scenes/SpaceDataCenter.tscn").instantiate()
 	dc.back_requested.connect(func() -> void: dc.queue_free())
 	add_child(dc)
@@ -988,9 +1105,10 @@ func _build_top() -> void:
 	p.custom_minimum_size = Vector2(480, 0)
 	p.add_theme_stylebox_override("panel", UI.box(Color(0.04, 0.09, 0.22, 0.92), UI.BORDER, 2, 12, 6))
 	add_child(p)
+	_register("mission", p)
 	var v := VBoxContainer.new()
 	p.add_child(v)
-	var t := UI.lbl("MISIÓN: OPERACIÓN REFUGIO LUNAR", 15, UI.GOLD)
+	var t := UI.lbl("MISIÓN: " + s.mission.title.to_upper(), 15, UI.GOLD)
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(t)
 	_title_label = UI.lbl("", 18)
@@ -999,8 +1117,14 @@ func _build_top() -> void:
 	_phase_label = UI.lbl("", 13, UI.MUTED)
 	_phase_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(_phase_label)
+	var mode_l := UI.lbl("%s · NIVEL %s · %s" % [GameSettings.mode_label().to_upper(), s.mission.tier_label().to_upper(), s.mission.difficulty_label().to_upper()], 11, UI.MUTED)
+	mode_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(mode_l)
+	_extra_label = UI.lbl("", 12, UI.GOLD)
+	_extra_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(_extra_label)
 	_banner = UI.lbl("", 15, UI.GOLD, true, 600)
-	_banner.position = Vector2(250, 98)
+	_banner.position = Vector2(250, 142)
 	_banner.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	_banner.add_theme_constant_override("outline_size", 6)
 	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1012,9 +1136,7 @@ func _build_top() -> void:
 	mb.position = Vector2(14, 8)
 	mb.custom_minimum_size = Vector2(100, 34)
 	add_child(mb)
-	var sub := UI.lbl(GameSettings.mode_label().to_upper(), 11, UI.MUTED)
-	sub.position = Vector2(14, 46)
-	add_child(sub)
+	_register("menu_btn", mb)
 
 
 func _build_indicators() -> void:
@@ -1023,6 +1145,7 @@ func _build_indicators() -> void:
 	p.custom_minimum_size = Vector2(228, 0)
 	p.add_theme_stylebox_override("panel", UI.box(Color(0.04, 0.09, 0.22, 0.92), UI.BORDER, 2, 10, 8))
 	add_child(p)
+	_register("indicators", p)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 9)
 	p.add_child(v)
@@ -1052,6 +1175,7 @@ func _build_robot() -> void:
 	p.custom_minimum_size = Vector2(228, 0)
 	p.add_theme_stylebox_override("panel", UI.box(Color(0.04, 0.09, 0.22, 0.92), UI.BORDER, 2, 10, 8))
 	add_child(p)
+	_register("robot", p)
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 8)
 	p.add_child(h)
@@ -1085,24 +1209,16 @@ func _build_robot() -> void:
 
 
 func _build_right() -> void:
-	var col := VBoxContainer.new()
-	col.position = Vector2(962, 8)
-	col.custom_minimum_size = Vector2(306, 0)
-	col.add_theme_constant_override("separation", 8)
-	add_child(col)
 	var bp := PanelContainer.new()
+	bp.position = Vector2(962, 8)
+	bp.custom_minimum_size = Vector2(306, 0)
 	bp.add_theme_stylebox_override("panel", UI.box(Color(0.04, 0.09, 0.22, 0.94), UI.BORDER, 2, 10, 8))
-	col.add_child(bp)
+	add_child(bp)
+	_register("resources", bp)
 	var bv := VBoxContainer.new()
 	bv.add_theme_constant_override("separation", 3)
 	bp.add_child(bv)
-	var top := HBoxContainer.new()
-	bv.add_child(top)
-	var bt := UI.lbl("RECURSOS DE ESTE TURNO", 13, UI.GOLD)
-	bt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top.add_child(bt)
-	var dcb := UI.btn("📊 Datos", Color("1f6fd0"), _open_data_center, 12, 26)
-	top.add_child(dcb)
+	bv.add_child(UI.lbl("RECURSOS DE ESTE TURNO", 13, UI.GOLD))
 	for k in [["energy", UI.YELLOW], ["mat", Color("c9b27a")], ["hours", Color("7fb3ff")]]:
 		var lab := UI.lbl("", 13, UI.TEXT)
 		bv.add_child(lab)
@@ -1111,12 +1227,27 @@ func _build_right() -> void:
 		_budget[k[0]] = {"label": lab, "bar": pb}
 	_warn = UI.lbl("", 12, UI.RED, true, 280)
 	bv.add_child(_warn)
+	# Panel de riesgos del turno (abajo, bajo el mapa)
+	_risk_panel = PanelContainer.new()
+	_risk_panel.position = Vector2(262, 654)
+	_risk_panel.custom_minimum_size = Vector2(676, 0)
+	_risk_panel.add_theme_stylebox_override("panel", UI.box(Color(0.12, 0.05, 0.05, 0.92), Color("ff7a4d"), 2, 10, 5))
+	add_child(_risk_panel)
+	_register("risks", _risk_panel)
+	_risk_box = VBoxContainer.new()
+	_risk_box.add_theme_constant_override("separation", 1)
+	_risk_panel.add_child(_risk_box)
 	_end_btn = UI.btn("Finalizar turno ▶▶", Color("1f9f55"), _end_turn, 17, 42)
-	bv.add_child(_end_btn)
+	_end_btn.position = Vector2(962, 186)
+	_end_btn.custom_minimum_size = Vector2(306, 42)
+	add_child(_end_btn)
+	_register("end_btn", _end_btn)
 	var mp := PanelContainer.new()
-	mp.custom_minimum_size = Vector2(0, 420)
+	mp.position = Vector2(962, 238)
+	mp.custom_minimum_size = Vector2(306, 416)
 	mp.add_theme_stylebox_override("panel", UI.box(Color(0.04, 0.09, 0.22, 0.94), UI.BORDER, 2, 10, 8))
-	col.add_child(mp)
+	add_child(mp)
+	_register("module", mp)
 	var sc := ScrollContainer.new()
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -1125,3 +1256,148 @@ func _build_right() -> void:
 	_module_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_module_box.add_theme_constant_override("separation", 6)
 	sc.add_child(_module_box)
+	# Botones sueltos: Datos (movible/ocultable) e Interfaz (siempre visible).
+	var dcb := UI.btn("📊 Datos", Color("1f6fd0"), _open_data_center, 14, 36)
+	dcb.position = Vector2(12, 666)
+	dcb.custom_minimum_size = Vector2(110, 36)
+	add_child(dcb)
+	_register("data_btn", dcb)
+	var gear := UI.btn("⚙ Interfaz", Color("5a4aa8"), _open_interface_settings, 14, 36)
+	gear.position = Vector2(132, 666)
+	gear.custom_minimum_size = Vector2(120, 36)
+	add_child(gear)
+	_register("gear", gear)
+	_apply_layout()
+
+
+# ------------------------------------------------- INTERFAZ MOVIBLE / OCULTABLE ----
+
+func _register(id: String, node: Control) -> void:
+	_ui[id] = {"node": node, "def": node.position}
+
+
+## Aplica la disposicion guardada (posiciones y paneles ocultos) y los ajustes de prueba por consola.
+func _apply_layout() -> void:
+	UILayout.load_layout()
+	for id in _ui:
+		var n: Control = _ui[id]["node"]
+		var saved: Variant = UILayout.get_pos(id)
+		n.position = saved if saved is Vector2 else _ui[id]["def"]
+		n.visible = UILayout.is_shown(id) or not UILayout.can_hide(id)
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--hide="):
+			for id in a.substr(7).split(","):
+				if _ui.has(id) and UILayout.can_hide(id):
+					(_ui[id]["node"] as Control).visible = false
+		if a.begins_with("--move="):   # --move=robot:400:300
+			var p := a.substr(7).split(":")
+			if p.size() == 3 and _ui.has(p[0]):
+				(_ui[p[0]]["node"] as Control).position = Vector2(float(p[1]), float(p[2]))
+		if a == "--interface":
+			_open_interface_settings()
+		if a == "--movemode":
+			_set_move_mode(true)
+
+
+func _open_interface_settings() -> void:
+	if _settings_root != null:
+		_settings_root.queue_free()
+		_settings_root = null
+		return
+	var p := PanelContainer.new()
+	p.position = Vector2(400, 90)
+	p.z_index = 60
+	p.add_theme_stylebox_override("panel", UI.box(UI.PANEL, UI.GOLD, 3, 14, 12))
+	add_child(p)
+	_settings_root = p
+	var v := VBoxContainer.new()
+	v.custom_minimum_size = Vector2(460, 0)
+	v.add_theme_constant_override("separation", 6)
+	p.add_child(v)
+	v.add_child(UI.lbl("⚙ INTERFAZ DEL JUEGO", 20, UI.GOLD))
+	v.add_child(UI.lbl("Elige qué paneles ver. Con «Mover» arrastras los paneles con el ratón. Se guarda para la próxima partida.", 13, UI.MUTED, true, 430))
+	for e in UILayout.ELEMENTS:
+		var id: String = e["id"]
+		var cb := CheckButton.new()
+		cb.text = e["name"] + ("" if e["can_hide"] else "  (siempre visible)")
+		cb.button_pressed = (_ui[id]["node"] as Control).visible
+		cb.disabled = not e["can_hide"]
+		cb.add_theme_font_size_override("font_size", 14)
+		cb.toggled.connect(_set_element_shown.bind(id))
+		v.add_child(cb)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	v.add_child(row)
+	var mv := UI.btn("✋ Mover paneles: " + ("SÍ" if _move_mode else "no"), Color("1f9f55") if _move_mode else Color("245aa8"), func() -> void:
+		_set_move_mode(not _move_mode)
+		_settings_root.queue_free()
+		_settings_root = null
+		_open_interface_settings(), 14, 38)
+	mv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(mv)
+	var rs := UI.btn("↺ Restablecer", Color("a85a24"), _reset_layout, 14, 38)
+	rs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(rs)
+	v.add_child(UI.btn("Cerrar", Color("1f6fd0"), _open_interface_settings, 15, 38))
+
+
+func _set_element_shown(on: bool, id: String) -> void:
+	(_ui[id]["node"] as Control).visible = on or not UILayout.can_hide(id)
+	UILayout.set_shown(id, on)
+	UILayout.save()
+	if _move_mode:
+		_refresh_overlays()
+
+
+func _reset_layout() -> void:
+	UILayout.reset()
+	for id in _ui:
+		(_ui[id]["node"] as Control).position = _ui[id]["def"]
+		(_ui[id]["node"] as Control).visible = true
+	if _move_mode:
+		_refresh_overlays()
+	if _settings_root != null:
+		_settings_root.queue_free()
+		_settings_root = null
+		_open_interface_settings()
+
+
+func _set_move_mode(on: bool) -> void:
+	_move_mode = on
+	_refresh_overlays()
+	if on:
+		_show_banner("✋ Modo mover: arrastra los paneles. Abre ⚙ Interfaz para terminar.")
+
+
+## Mientras se mueve, cada panel lleva encima una capa dorada que recibe el arrastre
+## (asi no se pulsan sus botones por accidente).
+func _refresh_overlays() -> void:
+	for id in _overlays:
+		if is_instance_valid(_overlays[id]):
+			(_overlays[id] as Control).queue_free()
+	_overlays.clear()
+	if not _move_mode:
+		return
+	for id in _ui:
+		var n: Control = _ui[id]["node"]
+		if not n.visible or id == "gear":
+			continue
+		var ov := Panel.new()
+		ov.set_anchors_preset(Control.PRESET_FULL_RECT)
+		ov.mouse_filter = Control.MOUSE_FILTER_STOP
+		ov.mouse_default_cursor_shape = Control.CURSOR_MOVE
+		ov.tooltip_text = "Arrastra para mover"
+		ov.add_theme_stylebox_override("panel", UI.box(Color(1.0, 0.85, 0.3, 0.12), UI.GOLD, 2, 8, 0))
+		ov.gui_input.connect(_drag_panel.bind(id))
+		n.add_child(ov)
+		_overlays[id] = ov
+
+
+func _drag_panel(ev: InputEvent, id: String) -> void:
+	var n: Control = _ui[id]["node"]
+	if ev is InputEventMouseMotion and ((ev as InputEventMouseMotion).button_mask & MOUSE_BUTTON_MASK_LEFT) != 0:
+		n.position += (ev as InputEventMouseMotion).relative
+		n.position = n.position.clamp(Vector2(-n.size.x + 50.0, 0.0), Vector2(1280.0 - 50.0, 720.0 - 30.0))
+	elif ev is InputEventMouseButton and not (ev as InputEventMouseButton).pressed:
+		UILayout.set_pos(id, n.position)
+		UILayout.save()

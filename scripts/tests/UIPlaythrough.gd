@@ -10,8 +10,9 @@ var _fail := 0
 func _ready() -> void:
 	NASADataManager.simulate_offline = true
 	print("=== PARTIDA COMPLETA POR LA INTERFAZ ===")
-	for strat in ["equilibrado", "pasivo"]:
-		await _play(strat)
+	for case in [["equilibrado", "lunar_awakening"], ["pasivo", "lunar_awakening"], ["lava_alterna", "lava_harvest"],
+			["pasivo", "lava_harvest"], ["pasivo", "orbital_shadow"], ["pasivo", "thermal_anomaly"]]:
+		await _play(case[0], case[1])
 	print("\nRESULTADO: %d OK, %d FALLOS" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
 
@@ -33,8 +34,9 @@ func _buttons(n: Node, out: Array) -> Array:
 	return out
 
 
-func _play(strat: String) -> void:
-	print("\n-- Estrategia: %s --" % strat)
+func _play(strat: String, mission_id: String) -> void:
+	print("\n-- %s · %s --" % [mission_id, strat])
+	MissionManager.current = MissionManager.get_mission(mission_id)
 	var g: Control = load("res://scenes/LunarBase.tscn").instantiate()
 	g._simulated = true
 	add_child(g)
@@ -50,7 +52,7 @@ func _play(strat: String) -> void:
 			var bs := _buttons(g._modal_root, [])
 			var toggles := bs.filter(func(b: Button) -> bool: return b.toggle_mode and not b.disabled)
 			if toggles.size() > 0:
-				var want: int = int({2: 0, 3: 0, 4: 1, 5: 0}.get(g.s.turn, 0)) if strat == "equilibrado" else 1
+				var want: int = int({2: 0, 3: 0, 4: 1, 5: 0}.get(g.s.turn, 0)) if strat == "equilibrado" else (0 if strat == "lava_alterna" else 1)
 				(toggles[mini(want, toggles.size() - 1)] as Button).pressed.emit()
 			var last: Button = bs[bs.size() - 1]
 			if g.s.finished and bs.size() >= 3:
@@ -69,6 +71,9 @@ func _play(strat: String) -> void:
 	if strat == "equilibrado":
 		_check(s.won, "la estrategia equilibrada gana jugando por la interfaz")
 		_check(s.decisions.size() == 4, "se registraron las 4 decisiones (%d)" % s.decisions.size())
+	elif strat == "lava_alterna":
+		_check(s.won, "alternar luz y oscuridad gana «Tubos de Lava» por la interfaz")
+		_check(s.decisions.size() == 3, "se registraron las 3 decisiones de la misión (%d)" % s.decisions.size())
 	else:
 		_check(not s.won, "la estrategia pasiva pierde por la interfaz")
 	var end_texts := ""
@@ -82,6 +87,15 @@ func _play(strat: String) -> void:
 func _plan_ui(g: Control, strat: String) -> void:
 	var s: BaseState = g.s
 	if strat == "pasivo":
+		return
+	if strat == "lava_alterna":
+		g._set_led(2 if s.turn % 2 == 0 else 0)
+		for tid in ["tend", "maintain_ls", "fertilize"]:
+			var need: bool = tid == "tend" or (tid == "maintain_ls" and s.ls_cond < 65.0) or (tid == "fertilize" and s.nutrients < 30.0)
+			var test: Array = (g.plan["tasks"] as Array).duplicate()
+			test.append(tid)
+			if need and not (tid in s.forced_tasks) and s.can_afford(test):
+				g._toggle_task(tid)
 		return
 	var want: Array = ["tend"]
 	if s.ls_cond < 70.0: want.append("maintain_ls")

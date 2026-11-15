@@ -1,10 +1,11 @@
 class_name GameSettings
 extends RefCounted
 ## Modo de juego elegido en el menu. Estatico: sobrevive al cambio de escena.
-##   principiante (7-9 anos):   3 acciones por turno y consumo de recursos 25% menor.
-##   intermedio  (10-12 anos):  2 acciones por turno y consumo normal.
+##   principiante (7-9 anos):   +4 horas de trabajo por turno y alertas solares mas suaves.
+##   intermedio  (10-12 anos):  reglas normales.
 
 static var mode: String = "intermedio"
+static var start_screen: String = "title"   # pantalla del menu al volver de una partida
 
 
 static func actions_per_turn() -> int:
@@ -16,4 +17,4 @@ static func consumption_factor() -> float:
 
 
 static func mode_label() -> String:
-	return "Modo Principiante" if mode == "principiante" else "Modo Intermedio"
+	return "Modo 7–9 años" if mode == "principiante" else "Modo 10–12 años"

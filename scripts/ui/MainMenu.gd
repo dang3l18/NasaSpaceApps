@@ -9,6 +9,7 @@ const C_BORDER := Color("2f6fd6")
 const C_TEXT := Color("e8f1ff")
 const C_MUTED := Color("8fa8d0")
 const C_GOLD := Color("ffd24d")
+const C_GREEN := Color("2ecc71")
 
 ## [titulo, tipo, texto corto]. Los tipos moon/earth/sun/radiation/data consultan datos reales de
 ## NASA/NOAA al abrirse; ref_* son documentacion (no hay una medicion en vivo de ese tema).
@@ -36,6 +37,20 @@ var _learn_cur := 0
 var _learn_last_refresh := 0
 var _ach_list: VBoxContainer
 var _cfg_list: VBoxContainer
+var _ui_checks := {}
+var _mission_q: Label
+var _mission_row: HBoxContainer
+var _tier_row: HBoxContainer
+var _mission_tier := 1
+var _br_mods: Label
+var _br_title: Label
+var _br_diff: Label
+var _br_dilemma: Label
+var _br_text: Label
+var _br_protect: Label
+var _br_sacrifice: Label
+var _br_obj: Label
+var _br_victory: Label
 var _credits_list: VBoxContainer
 
 
@@ -47,14 +62,23 @@ func _ready() -> void:
 	_build_astronaut()
 	_build_title()
 	_build_modes()
+	_build_missions()
+	_build_briefing()
 	_build_learn()
 	_build_achievements()
 	_build_config()
 	_build_credits()
-	var first := "title"
+	var first := GameSettings.start_screen
+	GameSettings.start_screen = "title"
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--screen="):
 			first = a.substr(9)
+		if a.begins_with("--tier="):
+			_mission_tier = clampi(int(a.substr(7)), 1, 3)
+		if a.begins_with("--briefing="):   # solo pruebas: abrir el dilema de una mision
+			MissionManager.reload()
+			_open_briefing(a.substr(11))
+			first = "briefing"
 	_show(first)
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--topic="):
@@ -90,6 +114,9 @@ func _show(name: String) -> void:
 		"achievements": _fill_achievements()
 		"config": _fill_config()
 		"credits": _fill_credits()
+		"missions":
+			_mission_q.text = "Elige tu destino · %s" % GameSettings.mode_label()
+			_fill_missions()
 		"learn": _pick_topic(0)
 
 
@@ -98,16 +125,19 @@ func _show(name: String) -> void:
 func _build_title() -> void:
 	var s := _screen("title")
 	var v := _center_column(s, 420)
-	var t1 := _lbl("JUNIOR", 54, Color("ffffff"), false)
+	var t1 := _lbl("ZYRANTH", 76, Color("3d8bff"), false)
+	var bold := FontVariation.new()
+	bold.base_font = ThemeDB.fallback_font
+	bold.variation_embolden = 0.7
+	t1.add_theme_font_override("font", bold)
+	t1.add_theme_color_override("font_outline_color", Color("0a1d4a"))
+	t1.add_theme_constant_override("outline_size", 8)
 	t1.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(t1)
-	var t2 := _lbl("ASTRONAUT", 54, Color("ffffff"), false)
-	t2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(t2)
-	var t3 := _lbl("MISSION TRAINER", 28, C_GOLD, false)
+	var t3 := _lbl("JUNIOR ASTRONAUT · MISSION TRAINER", 15, C_GOLD, false)
 	t3.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(t3)
-	var sub := _lbl("Operación: Refugio Lunar\nAprende · Decide · Sobrevive", 16, C_MUTED, false)
+	var sub := _lbl("Aprende · Decide · Sobrevive", 16, C_MUTED, false)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(sub)
 	v.add_child(_spacer(16))
@@ -127,14 +157,14 @@ func _build_modes() -> void:
 	var h := _lbl("MENÚ PRINCIPAL", 30, C_TEXT, false)
 	h.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(h)
-	var q := _lbl("Elige tu modo de misión", 16, C_MUTED, false)
+	var q := _lbl("Elige tu edad: el juego se adapta", 16, C_MUTED, false)
 	q.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(q)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
 	v.add_child(row)
-	row.add_child(_mode_card("🚀  MODO PRINCIPIANTE", "7–9 años", "+4 horas de trabajo por turno\nAlertas solares más suaves", "principiante", Color("2f7de0")))
-	row.add_child(_mode_card("⭐  MODO INTERMEDIO", "10–12 años", "Horas de trabajo normales\nAlertas solares completas", "intermedio", Color("e0a02f")))
+	row.add_child(_mode_card("🚀  MODO 7–9 AÑOS", "con más ayuda", "+4 horas de trabajo por turno\nAlertas solares más suaves", "principiante", Color("2f7de0")))
+	row.add_child(_mode_card("⭐  MODO 10–12 AÑOS", "reglas completas", "Horas de trabajo normales\nAlertas solares completas", "intermedio", Color("e0a02f")))
 	var row2 := HBoxContainer.new()
 	row2.add_theme_constant_override("separation", 14)
 	v.add_child(row2)
@@ -158,8 +188,169 @@ func _mode_card(title: String, age: String, desc: String, mode: String, col: Col
 	b.add_theme_stylebox_override("pressed", _box(col.darkened(0.5), col.lightened(0.3), 3, 12))
 	b.pressed.connect(func() -> void:
 		GameSettings.mode = mode
-		get_tree().change_scene_to_file("res://scenes/LunarBase.tscn"))
+		_show("missions"))
 	return b
+
+
+## Seleccion de mision: se reconstruye cada vez que se abre, con dificultad, candados y progreso
+## (todo viene de MissionManager). Una mision se desbloquea al superar la anterior.
+func _build_missions() -> void:
+	var s := _screen("missions")
+	var v := _center_column(s, 1040)
+	var h := _lbl("SELECCIÓN DE MISIÓN", 30, C_TEXT, false)
+	h.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(h)
+	var q := _lbl("Elige tu destino", 16, C_MUTED, false)
+	_mission_q = q
+	q.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(q)
+	_tier_row = HBoxContainer.new()
+	_tier_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_tier_row.add_theme_constant_override("separation", 10)
+	v.add_child(_tier_row)
+	_mission_row = HBoxContainer.new()
+	_mission_row.add_theme_constant_override("separation", 12)
+	v.add_child(_mission_row)
+	var hint := _lbl("Supera cada misión para desbloquear la siguiente.", 13, C_MUTED, false)
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(hint)
+	v.add_child(_btn("← Volver", Color("1f6fd0"), func() -> void: _show("modes")))
+
+
+## Pestañas de nivel (Fácil / Intermedia / Avanzada) con el progreso de cada una.
+func _fill_tabs() -> void:
+	for c in _tier_row.get_children():
+		c.queue_free()
+	for t in [1, 2, 3]:
+		var list := MissionManager.of_tier(t)
+		var done := 0
+		var playable := 0
+		for m in list:
+			if m.ready:
+				playable += 1
+			if MissionManager.is_completed(m.id):
+				done += 1
+		var col: Color = MissionDef.TIER_COLORS[t] if t == _mission_tier else Color("34456b")
+		var label := "%s%s" % [MissionDef.TIER_NAMES[t].to_upper(), ("  %d/%d" % [done, playable]) if playable > 0 else "  🔒"]
+		var b := _btn(label, col.darkened(0.35) if t == _mission_tier else Color("1a2440"), func() -> void:
+			_mission_tier = t
+			_fill_missions(), 15, 38)
+		b.custom_minimum_size = Vector2(190, 38)
+		if t == _mission_tier:
+			for st in ["normal", "hover", "pressed"]:
+				b.add_theme_stylebox_override(st, _box(col.darkened(0.45), col, 3, 10))
+		_tier_row.add_child(b)
+
+
+func _fill_missions() -> void:
+	_fill_tabs()
+	for c in _mission_row.get_children():
+		c.queue_free()
+	for m in MissionManager.of_tier(_mission_tier):
+		var unlocked := MissionManager.is_unlocked(m.id)
+		var done := MissionManager.is_completed(m.id)
+		var col := (Color("2ecc71") if done else Color("2f7de0")) if unlocked else Color("5b6478")
+		var card := PanelContainer.new()
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card.add_theme_stylebox_override("panel", _box(Color("0f2150") if unlocked else Color("141a2c"), col, 3, 14))
+		_mission_row.add_child(card)
+		var cv := VBoxContainer.new()
+		cv.add_theme_constant_override("separation", 6)
+		card.add_child(cv)
+		var ic := _lbl(m.icon if unlocked or not m.ready else "🔒", 46, C_TEXT, false)
+		ic.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cv.add_child(ic)
+		cv.add_child(_lbl(m.title, 16, C_GOLD if unlocked else C_MUTED, true, 210))
+		cv.add_child(_lbl(m.place, 12, C_MUTED, true, 210))
+		cv.add_child(_lbl("%s  %s" % [m.stars(), m.difficulty_label()], 14, m.difficulty_color() if unlocked else C_MUTED, false))
+		if m.ready and (m.consumption_factor > 1.001 or m.event_aggression > 0.0):
+			cv.add_child(_lbl("⚙ " + m.modifiers_text(), 11, C_MUTED, true, 210))
+		cv.add_child(_lbl(m.summary, 12, C_MUTED, true, 210))
+		var status := "✔ Superada" if done else ("" if unlocked else "🔒 " + MissionManager.lock_reason(m.id))
+		if status != "":
+			cv.add_child(_lbl(status, 12, C_GREEN if done else Color("ffb07a"), true, 210))
+		var btn := _btn("Ver dilema ▶" if unlocked else "Bloqueada", Color("1f9f55") if unlocked else Color("3a4258"), Callable(), 15, 40)
+		btn.disabled = not unlocked
+		if unlocked:
+			btn.pressed.connect(_open_briefing.bind(m.id))
+		cv.add_child(btn)
+
+
+## Pantalla de dilema: antes de empezar, la mision explica que se protege y que se sacrifica.
+func _build_briefing() -> void:
+	var s := _screen("briefing")
+	var v := _center_column(s, 800)
+	_br_title = _lbl("", 28, C_GOLD, false)
+	_br_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(_br_title)
+	_br_diff = _lbl("", 16, C_TEXT, false)
+	_br_diff.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(_br_diff)
+	_br_mods = _lbl("", 13, C_MUTED, false)
+	_br_mods.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(_br_mods)
+	var dil := PanelContainer.new()
+	dil.add_theme_stylebox_override("panel", _box(Color("1a1330"), Color("b07cff"), 3, 14))
+	v.add_child(dil)
+	var dv := VBoxContainer.new()
+	dv.add_theme_constant_override("separation", 8)
+	dil.add_child(dv)
+	_br_dilemma = _lbl("", 20, C_GOLD, true, 700)
+	dv.add_child(_br_dilemma)
+	_br_text = _lbl("", 14, C_TEXT, true, 700)
+	dv.add_child(_br_text)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	dv.add_child(row)
+	var pp := PanelContainer.new()
+	pp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pp.add_theme_stylebox_override("panel", _box(Color("10301f"), C_GREEN, 2, 10))
+	row.add_child(pp)
+	var pv := VBoxContainer.new()
+	pp.add_child(pv)
+	pv.add_child(_lbl("🛡 PROTEGES", 14, C_GREEN, false))
+	_br_protect = _lbl("", 14, C_TEXT, true, 300)
+	pv.add_child(_br_protect)
+	var sp := PanelContainer.new()
+	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sp.add_theme_stylebox_override("panel", _box(Color("33170f"), Color("ff8a3d"), 2, 10))
+	row.add_child(sp)
+	var sv := VBoxContainer.new()
+	sp.add_child(sv)
+	sv.add_child(_lbl("✂ SACRIFICAS", 14, Color("ff8a3d"), false))
+	_br_sacrifice = _lbl("", 14, C_TEXT, true, 300)
+	sv.add_child(_br_sacrifice)
+	_br_obj = _lbl("", 13, C_TEXT, true, 760)
+	v.add_child(_br_obj)
+	_br_victory = _lbl("", 13, C_MUTED, true, 760)
+	v.add_child(_br_victory)
+	var b := HBoxContainer.new()
+	b.add_theme_constant_override("separation", 10)
+	v.add_child(b)
+	var start := _btn("▶ Empezar misión", Color("1f9f55"), func() -> void:
+		get_tree().change_scene_to_file(MissionManager.current.scene), 20, 50)
+	start.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.add_child(start)
+	var back := _btn("← Volver", Color("1f6fd0"), func() -> void: _show("missions"), 16, 50)
+	back.custom_minimum_size = Vector2(160, 50)
+	b.add_child(back)
+
+
+func _open_briefing(id: String) -> void:
+	if not MissionManager.select(id):
+		return
+	var m := MissionManager.current
+	_br_title.text = "%s %s" % [m.icon, m.title.to_upper()]
+	_br_diff.text = "Nivel %s · %s  Dificultad: %s" % [m.tier_label(), m.stars(), m.difficulty_label()]
+	_br_diff.add_theme_color_override("font_color", m.difficulty_color())
+	_br_mods.text = "Modificadores de esta misión: " + m.modifiers_text()
+	_br_dilemma.text = "⚖ DILEMA: " + m.dilemma_title
+	_br_text.text = m.dilemma_text
+	_br_protect.text = m.protect
+	_br_sacrifice.text = m.sacrifice
+	_br_obj.text = "Objetivos:\n" + "\n".join(PackedStringArray(Array(m.objectives).map(func(o: String) -> String: return "• " + o)))
+	_br_victory.text = "Victoria: " + m.victory_text
+	_show("briefing")
 
 
 func _build_learn() -> void:
@@ -377,15 +568,20 @@ func _build_achievements() -> void:
 func _fill_achievements() -> void:
 	for c in _ach_list.get_children():
 		c.queue_free()
-	var st := Progress.stats()
-	_ach_list.add_child(_lbl("Misiones jugadas: %d · superadas: %d" % [st["played"], st["won"]], 15, C_MUTED, false))
-	for a in Progress.ACHIEVEMENTS:
-		var ok := Progress.is_unlocked(a["id"])
+	MissionManager.reload()
+	var st: Dictionary = MissionManager.data["stats"]
+	var n_ach := 0
+	for a in AchievementManager.DEFS:
+		if AchievementManager.is_unlocked(a["id"]):
+			n_ach += 1
+	_ach_list.add_child(_lbl("Partidas: %d · superadas: %d · logros: %d de %d" % [st["played"], st["won"], n_ach, AchievementManager.DEFS.size()], 15, C_MUTED, false))
+	for a in AchievementManager.DEFS:
+		var ok := AchievementManager.is_unlocked(a["id"])
 		var p := PanelContainer.new()
 		p.add_theme_stylebox_override("panel", _box(Color("14301f") if ok else Color("0f1830"), Color("2ecc71") if ok else Color("34456b"), 2, 10))
 		var r := VBoxContainer.new()
 		p.add_child(r)
-		r.add_child(_lbl(("★ " if ok else "☆ ") + a["name"], 18, C_GOLD if ok else C_MUTED, false))
+		r.add_child(_lbl("%s %s %s" % ["★" if ok else "☆", a["icon"], a["name"]], 18, C_GOLD if ok else C_MUTED, false))
 		r.add_child(_lbl(a["desc"], 14, C_TEXT if ok else C_MUTED, true))
 		_ach_list.add_child(p)
 
@@ -398,9 +594,43 @@ func _build_config() -> void:
 	v.add_child(h)
 	v.add_child(_lbl("Idioma: Español", 17, C_TEXT, false))
 	v.add_child(_lbl("Fuentes de datos (estado de la última consulta; las no consultadas se cargan al abrir el Space Data Center):", 15, C_MUTED, true))
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(0, 150)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(sc)
 	_cfg_list = VBoxContainer.new()
+	_cfg_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_cfg_list.add_theme_constant_override("separation", 4)
-	v.add_child(_cfg_list)
+	sc.add_child(_cfg_list)
+	# Interfaz del juego: mostrar u ocultar paneles (mover se hace dentro del juego, con ⚙ Interfaz).
+	UILayout.load_layout()
+	v.add_child(_lbl("Interfaz del juego: elige qué paneles ver.", 15, C_GOLD, true, 600))
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 24)
+	v.add_child(grid)
+	for e in UILayout.ELEMENTS:
+		if not e["can_hide"]:
+			continue
+		var cb := CheckButton.new()
+		cb.text = e["name"]
+		cb.button_pressed = UILayout.is_shown(e["id"])
+		cb.add_theme_font_size_override("font_size", 14)
+		cb.toggled.connect(func(on: bool) -> void:
+			UILayout.set_shown(e["id"], on)
+			UILayout.save())
+		_ui_checks[e["id"]] = cb
+		grid.add_child(cb)
+	var rowb := HBoxContainer.new()
+	rowb.add_theme_constant_override("separation", 10)
+	v.add_child(rowb)
+	var rs := _btn("↺ Restablecer interfaz", Color("a85a24"), func() -> void:
+		UILayout.reset()
+		for k in _ui_checks:
+			(_ui_checks[k] as CheckButton).button_pressed = true, 14, 38)
+	rs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rowb.add_child(rs)
+	v.add_child(_lbl("Para MOVER los paneles, abre ⚙ Interfaz dentro del juego y activa «Mover paneles».", 12, C_MUTED, true, 600))
 	v.add_child(_btn("← Volver", Color("1f6fd0"), func() -> void: _show("title")))
 
 
@@ -428,7 +658,7 @@ func _build_credits() -> void:
 	var h := _lbl("CRÉDITOS", 30, C_GOLD, false)
 	h.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(h)
-	v.add_child(_lbl("Juego educativo desarrollado para NASA Space Apps Challenge 2026.", 16, C_TEXT, true))
+	v.add_child(_lbl("ZYRANTH · Junior Astronaut: Mission Trainer. Juego educativo desarrollado para NASA Space Apps Challenge 2026.", 16, C_TEXT, true))
 	v.add_child(_lbl("Datos y atribuciones:", 16, C_MUTED, false))
 	_credits_list = VBoxContainer.new()
 	_credits_list.add_theme_constant_override("separation", 3)
@@ -588,7 +818,8 @@ func _btn(text: String, col: Color, cb: Callable, size := 18, height := 46) -> B
 	b.add_theme_font_size_override("font_size", size)
 	for st in ["normal", "hover", "pressed"]:
 		b.add_theme_stylebox_override(st, _box(col if st == "normal" else col.lightened(0.15), col.lightened(0.4), 2, 10))
-	b.pressed.connect(cb)
+	if cb.is_valid():
+		b.pressed.connect(cb)
 	return b
 
 

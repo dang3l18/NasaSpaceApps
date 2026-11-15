@@ -9,7 +9,7 @@ extends Node
 signal _done(key: String, result: Dictionary)
 signal status_changed(source: String, status: Dictionary)
 
-const USER_AGENT := "JuniorAstronautMissionTrainer/0.1 (educational game)"
+const USER_AGENT := "Zyranth/0.1 (educational game)"
 const TIMEOUT_SEC := 8.0
 const CACHE_DIR := "user://cache/json"
 const DONKI_BASE := "https://api.nasa.gov/DONKI/"

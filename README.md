@@ -1,6 +1,40 @@
-# Junior Astronaut: Mission Trainer — Operación: Refugio Lunar
+# ZYRANTH — Junior Astronaut: Mission Trainer
 
-Videojuego educativo 2D hecho en **Godot 4.7** (GDScript) para niños de 7 a 12 años. Gestionas una **base lunar**
+Videojuego educativo 2D hecho en **Godot 4.7** (GDScript) para niños de 7 a 12 años, con misiones espaciales basadas en datos abiertos de NASA.
+
+## Misiones
+
+Cada misión es un **dilema de ingeniería**: algo que proteger y algo que sacrificar. Se desbloquean en cadena:
+hay que superar una para abrir la siguiente.
+
+| # | Misión | Dificultad | Dilema | Estado |
+|---|---|---|---|---|
+| 1 | 🌙 **Refugio Lunar: El Despertar** | ★ Fácil | Cuatro sistemas, un solo presupuesto (tutorial) | Jugable |
+| 2 | ☀️ **Tormenta en el Horizonte** | ★★ Media | Cultivos o escudo: sacrificar energía de las plantas para proteger a la tripulación | Se desbloquea al superar la 1 |
+| 3 | 🔦 **Apagón en el Casquete** | ★★★ Difícil | ¿Qué subsistema apagamos? (hogar, control o luces de cultivo) | Se desbloquea al superar la 2 |
+| 4 | 🔴 Base en Marte | Avanzada | — | En preparación |
+
+### Nivel Intermedio (independiente del nivel Fácil; en cadena dentro del nivel)
+
+| # | Misión | Dificultad | Dilema y mecánica propia | Modificadores |
+|---|---|---|---|---|
+| 1 | 🌋 **La Cosecha de los Tubos de Lava** | ★ Fácil | Luz o energía: alterna luz alta y oscuridad; tras la oscuridad la luz alta da un impulso, dos turnos seguidos estresan a las plantas | consumo +5%, fallos 25% |
+| 2 | 🌑 **Efecto de Sombra Orbital** | ★★ Media | Calor o contacto: noche prolongada; calefacción y transmisión de datos compiten por la batería (hay que enviar 4 paquetes) | consumo +5%, fallos 35% |
+| 3 | 🛡 **Anomalía en el Escudo Térmico** | ★★★ Difícil | Sellar la fisura o cuidar el aire: la soldadura desvía energía del soporte vital y gasta oxígeno de los trajes de EVA antes de la tormenta (DONKI, nivel 3 de escenario educativo) | consumo +10%, fallos 45% |
+
+Los **fallos** son sucesos de riesgo que solo pueden ocurrir si descuidas un sistema (soporte vital desgastado, poca
+reserva de energía, plantas enfermas o tripulación agotada); cuanto más agresiva la misión, más probables.
+Cada misión comprueba su propia condición de victoria y se marca como «Superada» en el guardado JSON.
+
+Las misiones viven en `scripts/missions/MissionManager.gd` (una `MissionDef` por misión) y su guion de eventos en
+`scripts/sim/MissionDirector.gd`. El progreso y los logros se guardan en JSON (`user://zyranth_save.json`).
+
+**Logros** (`AchievementManager`): Ingeniero de Campo, Escudo Humano, Agricultor Espacial, Maestro del Trade-off,
+Primera misión superada y Científico de datos.
+
+## Operación: Refugio Lunar (simulación común)
+
+Gestionas una **base lunar**
 durante 3 días (9 turnos) y aprendes que sobrevivir en la Luna exige **equilibrar cuatro sistemas** que compiten por
 los mismos recursos.
 
@@ -44,7 +78,9 @@ conexión y sin caché, la alerta solar pasa a un escenario rotulado como **SIMU
 
 ```
 godot --headless --path . res://scenes/SimTests.tscn        # equilibrio de los 4 sistemas (sin red)
+godot --headless --path . res://scenes/MissionTests.tscn    # misiones, desbloqueo, logros y guardado JSON (sin red)
 godot --headless --path . res://scenes/UIPlaythrough.tscn   # misión completa por la interfaz (sin red)
+godot --headless --path . res://scenes/UILayoutTests.tscn   # interfaz movible y ocultable (sin red)
 godot --headless --path . res://scenes/ConnectionTests.tscn # conexión, caché y modo sin conexión (red real)
 ```
 

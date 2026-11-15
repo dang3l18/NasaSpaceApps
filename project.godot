@@ -10,8 +10,8 @@ config_version=5
 
 [application]
 
-config/name="Junior Astronaut: Mission Trainer"
-config/description="Juego educativo: Operacion Ultima Orbita. Usa datos abiertos de NASA (DONKI, GIBS, CMR)."
+config/name="Zyranth"
+config/description="ZYRANTH: juego educativo de misiones espaciales (Junior Astronaut: Mission Trainer). Usa datos abiertos de NASA (DONKI, GIBS, LRO, CMR)."
 run/main_scene="res://scenes/MainMenu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 
@@ -21,6 +21,8 @@ NASADataManager="*res://scripts/data/NASADataManager.gd"
 DatasetManager="*res://scripts/data/DatasetManager.gd"
 ScientificDataManager="*res://scripts/data/ScientificDataManager.gd"
 EarthImageryManager="*res://scripts/data/EarthImageryManager.gd"
+MissionManager="*res://scripts/missions/MissionManager.gd"
+AchievementManager="*res://scripts/missions/AchievementManager.gd"
 
 [display]
 
