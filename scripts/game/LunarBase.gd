@@ -39,6 +39,7 @@ var _moon: ColorRect
 var _turn_dots: Control
 var _tutorial: TutorialGuide
 var _module_panel: Control
+var _mission_panel: Control
 var _happy_until := 0   # ms: el robot esta contento hasta este momento
 var _alerts: AlertDirector      # genera las alertas espaciales (null en las pruebas automaticas)
 var _alert_ui: AlertOverlay
@@ -1068,6 +1069,8 @@ func _chip_row(parent: VBoxContainer, title: String, chips: Array, good: bool) -
 
 
 func _show_alert_modal(news: Array) -> void:
+	if _tutorial != null:
+		_tutorial.notify("alert")
 	var v := _modal("☀️ ¡Alerta solar!", UI.RED, 880)
 	var frame := PanelContainer.new()
 	frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
@@ -1111,15 +1114,23 @@ func _show_alert_modal(news: Array) -> void:
 ## Tutorial progresivo: el robot ensena cada cosa la primera vez que hace falta.
 func _build_tutorial() -> void:
 	_tutorial = TutorialGuide.new()
+	_tutorial.mission_id = s.mission.id
 	add_child(_tutorial)
 	_tutorial.can_show = func() -> bool: return _modal_root == null and not _alert_open and not _intro_pending and not s.finished
-	_tutorial.targets = {
-		"energy": func() -> Rect2: return _vis_rect(_ind_rows["energia"]["root"]),
-		"module": func() -> Rect2: return _vis_rect(_module_panel),
-		"greenhouse": func() -> Rect2: return _module_rect("greenhouse"),
-		"shelter": func() -> Rect2: return _module_rect("shelter"),
-		"task": func() -> Rect2: return _vis_rect(_end_btn),
-	}
+	_tutorial.resolver = _tutorial_target
+
+
+## Donde esta cada elemento al que apunta el robot (vacio = no se ve ahora).
+func _tutorial_target(key: String) -> Rect2:
+	if key.begins_with("meter:"):
+		return _vis_rect(_ind_rows[key.substr(6)]["root"])
+	if key.begins_with("module:"):
+		return _module_rect(key.substr(7))
+	match key:
+		"header": return _vis_rect(_mission_panel)
+		"panel:module": return _vis_rect(_module_panel)
+		"end": return _vis_rect(_end_btn)
+	return Rect2()
 
 
 func _vis_rect(c: Control) -> Rect2:
@@ -1464,6 +1475,7 @@ func _build_top() -> void:
 	p.custom_minimum_size = Vector2(500, 0)
 	p.add_theme_stylebox_override("panel", UI.panel_box(0.94, UI.BORDER, 6))
 	add_child(p)
+	_mission_panel = p
 	_register("mission", p)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 0)

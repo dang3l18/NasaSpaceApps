@@ -47,9 +47,11 @@ de NASA**: el detalle sigue a un toque en «💡 ¿Sabías qué?» o con el curs
 - **Decisiones:** tarjetas ilustradas (máx. 3) con «▲ Ganas» y «▼ Gastas» en iconos, para comparar sin leer.
 - **Robot:** globo de dialogo, cambia la boca si el aire o la energía están en rojo y explica con analogías («los pulmones de la base»).
 
-- **Tutorial progresivo** (`scripts/game/TutorialGuide.gd`): el robot enseña cada cosa la primera vez que hace falta (energía, edificios,
-  invernadero, terminar turno, escudo) con un anillo que late, una flecha animada y un globo corto. No interrumpe ventanas y se puede
-  repetir con «❓ Repetir ayuda» o desde Ajustes.
+- **Tutorial progresivo con una serie de ayudas para cada misión** (`scripts/game/TutorialGuide.gd`): el robot enseña cada cosa la primera vez
+  que hace falta, con un anillo que late, una flecha animada y un globo corto («Ayuda 2 de 8»). Cada misión tiene sus pasos propios ligados a
+  su dilema (tormenta: «¡Súbela antes de la tormenta!»; apagón: el Centro de comandos y la reserva; tubos de lava: alternar luz alta y oscuridad;
+  sombra orbital: calefacción o datos; grieta: sellar y los trajes), más los pasos básicos que aún no se hayan visto. No interrumpe ventanas y se
+  repite con «❓ Repetir ayuda» (serie de la misión actual) o desde Ajustes.
 - **Alertas** con una escena animada por evento (`KidArt.gd`), el robot que lo cuenta en una frase, respuestas en tarjetas con iconos y
   un resultado siempre amable («¡Se acabó el tiempo! Así se aprende.»). Cada alerta trae un dato curioso al terminar.
 - **Resumen de turno** con 4 tarjetas (aire, escudo, energía, comida) y flechas ▲▼; **alerta solar** con astronautas corriendo al refugio y

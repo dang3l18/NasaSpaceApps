@@ -1,22 +1,61 @@
 class_name TutorialGuide
 extends Control
-## Tutorial progresivo: el robot ensena cada mecanica la PRIMERA VEZ que hace falta, con un anillo que late
-## alrededor del elemento, una flecha animada y un globo de dialogo corto. Nunca interrumpe una ventana abierta.
-## Lo ya visto se recuerda (user://tutorial.cfg) y se puede repetir con el boton «Repetir ayuda» del robot
-## o desde Ajustes. Logica de disparo: LunarBase llama a notify("start" | "select" | "select:ID" | "task" | "turn:N").
+## Tutorial progresivo con UNA SERIE DE AYUDAS PARA CADA MISION: el robot ensena cada cosa la primera vez que
+## hace falta, con un anillo que late alrededor del elemento, una flecha animada y un globo de dialogo corto.
+## Cada mision tiene sus propios pasos ligados a su dilema (tormenta, apagon, ciclo de luz, sombra, grieta)
+## mas los pasos basicos que aun no se hayan visto. Nunca interrumpe una ventana abierta.
+## Lo ya visto se recuerda (user://tutorial.cfg) y se repite con «Repetir ayuda» (serie de la mision actual).
+## LunarBase llama a notify("start" | "select" | "select:ID" | "task" | "turn:N" | "alert").
 
 const SAVE_PATH := "user://tutorial.cfg"
-const STEPS := {
-	"energy": {"triggers": ["start"], "text": "⚡ Este rayo muestra la energía de nuestra base."},
-	"module": {"triggers": ["select"], "text": "👆 Aquí ves qué hace el edificio y qué puedes hacer."},
-	"greenhouse": {"triggers": ["select:greenhouse"], "text": "🌱 Las plantas necesitan luz para crecer."},
-	"task": {"triggers": ["task"], "text": "▶ ¡Cuando termines de elegir, pulsa aquí!"},
-	"shelter": {"triggers": ["select:shelter", "turn:3"], "text": "🛡️ El escudo nos protege de la radiación del Sol."},
-}
-const ORDER := ["energy", "module", "greenhouse", "task", "shelter"]
 
+## Cada paso: disparadores, elemento al que apunta (target) y texto. Targets: meter:<id> (medidor de la izquierda),
+## module:<id> (edificio del mapa), header (cabecera de la mision), panel:module (ventana del edificio), end (terminar turno).
+const STEPS := {
+	# --- basicos (se muestran la primera vez que se juega cualquier mision) ---
+	"energy": {"triggers": ["start"], "target": "meter:energia", "text": "⚡ Este rayo muestra la energía de nuestra base."},
+	"module": {"triggers": ["select"], "target": "panel:module", "text": "👆 Aquí ves qué hace el edificio y qué puedes hacer."},
+	"greenhouse": {"triggers": ["select:greenhouse"], "target": "module:greenhouse", "text": "🌱 Las plantas necesitan luz para crecer."},
+	"task": {"triggers": ["task"], "target": "end", "text": "▶ ¡Cuando termines de elegir, pulsa aquí!"},
+	"shelter": {"triggers": ["select:shelter", "turn:3"], "target": "module:shelter", "text": "🛡️ El escudo nos protege de la radiación del Sol."},
+	# --- Tormenta en el Horizonte ---
+	"storm_shield": {"triggers": ["start"], "target": "meter:proteccion", "text": "🛡️ Esta barra es tu escudo. ¡Súbela antes de la tormenta!"},
+	"storm_energy": {"triggers": ["turn:2"], "target": "module:shelter", "text": "⚡ El refugio gasta energía el día de la tormenta. ¡Guárdala!"},
+	"storm_lights": {"triggers": ["select:greenhouse"], "target": "module:greenhouse", "text": "💡 Apagar las luces de las plantas ahorra energía."},
+	"storm_day": {"triggers": ["alert"], "target": "module:shelter", "text": "🏠 ¡Hoy el refugio protege al equipo!"},
+	# --- Apagón en el Casquete ---
+	"black_sun": {"triggers": ["start"], "target": "module:panels", "text": "☀️ Casi no llega luz: los paneles dan poca energía."},
+	"black_cmd": {"triggers": ["turn:2", "select:command"], "target": "module:command", "text": "🔌 Aquí apagas lo que no necesitas para ahorrar."},
+	"black_reserve": {"triggers": ["select:backup_energy", "turn:3"], "target": "module:backup_energy", "text": "🔋 La reserva es para emergencias. ¡Con cuidado!"},
+	# --- La Cosecha de los Tubos de Lava ---
+	"lava_air": {"triggers": ["start"], "target": "meter:vida", "text": "💨 Aquí el aire depende de las plantas."},
+	"lava_light": {"triggers": ["turn:2", "select:greenhouse"], "target": "module:greenhouse", "text": "💡 Alterna luz alta y oscuridad: ¡así crecen más!"},
+	"lava_header": {"triggers": ["turn:3"], "target": "header", "text": "🔦 Aquí ves cuál fue tu última luz."},
+	# --- Efecto de Sombra Orbital ---
+	"shadow_night": {"triggers": ["start"], "target": "meter:energia", "text": "🌑 La noche es larga: ¡cuida la batería!"},
+	"shadow_cmd": {"triggers": ["turn:2", "select:command"], "target": "module:command", "text": "🔥 Calefacción o datos: no alcanza para los dos."},
+	"shadow_data": {"triggers": ["turn:3"], "target": "header", "text": "📡 Hay que enviar 4 paquetes de datos a la Tierra."},
+	# --- Anomalía en el Escudo Térmico ---
+	"therm_crack": {"triggers": ["start"], "target": "meter:proteccion", "text": "🛡️ ¡Hay una grieta en el escudo! Deja pasar radiación."},
+	"therm_seal": {"triggers": ["turn:2", "select:shelter"], "target": "module:shelter", "text": "🔧 Aquí sellas la grieta. Gasta energía y aire."},
+	"therm_suits": {"triggers": ["turn:3"], "target": "header", "text": "🧑‍🚀 Mira el aire de los trajes: sin él no se sale a reparar."},
+}
+
+## Serie de cada mision: primero sus pasos propios y luego los basicos (que solo salen si aun no se vieron).
+const BASICS := ["energy", "module", "greenhouse", "task", "shelter"]
+const SERIES := {
+	"lunar_awakening": ["energy", "module", "greenhouse", "task", "shelter"],
+	"storm_horizon": ["storm_shield", "storm_energy", "storm_lights", "storm_day", "energy", "module", "task", "shelter"],
+	"lunar_blackout": ["black_sun", "black_cmd", "black_reserve", "energy", "module", "task"],
+	"lava_harvest": ["lava_air", "lava_light", "lava_header", "energy", "module", "greenhouse", "task"],
+	"orbital_shadow": ["shadow_night", "shadow_cmd", "shadow_data", "energy", "module", "task"],
+	"thermal_anomaly": ["therm_crack", "therm_seal", "therm_suits", "energy", "module", "task"],
+}
+
+var mission_id := "lunar_awakening"
 var save_path := SAVE_PATH     # archivo donde se recuerdan los pasos vistos
-var targets: Dictionary = {}    # id del paso -> Callable que devuelve el Rect2 (global) del elemento
+var targets: Dictionary = {}    # (opcional) id de paso -> Callable que devuelve el Rect2 global; tiene prioridad
+var resolver: Callable          # clave de target ("meter:energia"...) -> Rect2 global (vacio = no visible)
 var can_show: Callable          # devuelve true si ahora se puede mostrar un consejo (sin ventanas abiertas)
 var active := ""                # paso que se esta mostrando ("" = ninguno)
 var seen: Dictionary = {}
@@ -32,6 +71,11 @@ static func reset_saved() -> void:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 
 
+## Pasos de la mision actual, en orden.
+func order() -> Array:
+	return SERIES.get(mission_id, SERIES["lunar_awakening"])
+
+
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -42,26 +86,28 @@ func _ready() -> void:
 			seen[k] = true
 
 
-## Avisa de que paso algo en el juego; si algun paso lo estaba esperando, se pone en cola.
+## Avisa de que paso algo en el juego; si algun paso de la serie lo estaba esperando, se pone en cola.
 func notify(trigger: String) -> void:
-	for id in ORDER:
+	for id in order():
 		if seen.has(id) or id == active or id in _queue:
 			continue
 		if trigger in (STEPS[id]["triggers"] as Array):
 			_queue.append(id)
 
 
-## Vuelve a explicar todo desde el principio.
+## Vuelve a explicar toda la serie de ESTA mision, paso a paso.
 func replay() -> void:
 	_close_bubble()
-	seen.clear()
+	for id in order():
+		seen.erase(id)
 	_queue.clear()
+	for id in order():
+		_queue.append(id)
 	_save()
-	notify("start")
 
 
 func skip_all() -> void:
-	for id in ORDER:
+	for id in order():
 		seen[id] = true
 	_queue.clear()
 	_dismiss()
@@ -74,21 +120,33 @@ func _save() -> void:
 	cfg.save(save_path)
 
 
+func _rect_for(id: String) -> Rect2:
+	var fn: Callable = targets.get(id, Callable())
+	if fn.is_valid():
+		return fn.call()
+	if resolver.is_valid():
+		return resolver.call(str(STEPS[id]["target"]))
+	return Rect2()
+
+
 func _process(delta: float) -> void:
 	_t += delta
 	if active == "":
-		if not _queue.is_empty() and can_show.is_valid() and bool(can_show.call()):
-			_activate(str(_queue.pop_front()))
+		while not _queue.is_empty() and can_show.is_valid() and bool(can_show.call()):
+			var nxt := str(_queue.pop_front())
+			if _rect_for(nxt).size == Vector2.ZERO:
+				continue   # su elemento no esta visible ahora: se salta (no insistimos)
+			_activate(nxt)
+			break
 		return
 	# Si de repente hay una ventana o alerta, el consejo espera (se oculta) en vez de estorbar
 	var allowed: bool = not can_show.is_valid() or bool(can_show.call())
 	if _bubble != null:
 		_bubble.visible = allowed
 	visible = allowed
-	var fn: Callable = targets.get(active, Callable())
-	_target_rect = fn.call() if fn.is_valid() else Rect2()
+	_target_rect = _rect_for(active)
 	if _target_rect.size == Vector2.ZERO:
-		_dismiss()   # el elemento no esta visible (por ejemplo, oculto en Ajustes): no insistimos
+		_dismiss()
 		return
 	_place_bubble()
 	queue_redraw()
@@ -113,10 +171,14 @@ func _activate(id: String) -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	v.add_child(row)
+	var pos_in_series: int = order().find(id) + 1
 	var ok := UI.btn("👍 ¡Entendido!", Color("28b36a"), _dismiss, 17, 44)
 	row.add_child(ok)
 	var skip := UI.btn("Omitir ayuda", Color("6b7596"), skip_all, 14, 44)
 	row.add_child(skip)
+	var step_l := UI.lbl("Ayuda %d de %d" % [pos_in_series, order().size()], 13, Color("5b6b99"))
+	step_l.add_theme_constant_override("outline_size", 0)
+	v.add_child(step_l)
 	add_child(_bubble)
 	_bubble.modulate.a = 0.0
 	_bubble.scale = Vector2(0.85, 0.85)

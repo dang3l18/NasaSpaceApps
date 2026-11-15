@@ -25,6 +25,7 @@ func _ready() -> void:
 	await _test_game_screen()
 	await _test_menu()
 	await _test_tutorial()
+	await _test_mission_series()
 	await _test_results()
 	print("\nRESULTADO: %d OK, %d FALLOS" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
@@ -305,3 +306,73 @@ Alertas y resultados")
 	_check(_small_fonts(g) == 0, "ni las alertas ni los resultados usan texto menor de %d px" % UI.MIN_FONT)
 	g.queue_free()
 	await get_tree().process_frame
+
+
+func _test_mission_series() -> void:
+	print("
+Una serie de ayudas para cada misión")
+	var own_sets: Array = []
+	var first_steps: Array = []
+	for mid in TutorialGuide.SERIES:
+		var m := MissionManager.get_mission(mid)
+		var series: Array = TutorialGuide.SERIES[mid]
+		var own: Array = series.filter(func(id: String) -> bool: return not (id in TutorialGuide.BASICS))
+		var valid := true
+		for id in series:
+			if not TutorialGuide.STEPS.has(id):
+				valid = false
+				continue
+			var st: Dictionary = TutorialGuide.STEPS[id]
+			if str(st["text"]).length() > 70:
+				valid = false
+				print("     texto largo: ", id)
+			for tr in st["triggers"]:
+				var trs := str(tr)
+				if trs.begins_with("turn:") and (int(trs.substr(5)) < 2 or int(trs.substr(5)) > m.turns - 1):
+					valid = false
+				if trs == "alert" and m.alert_turn == 0:
+					valid = false
+		_check(valid, "%s: todos los pasos existen, son cortos y se disparan en turnos válidos" % m.title)
+		if mid != "lunar_awakening":
+			_check(own.size() >= 3, "%s tiene %d ayudas propias, no solo las básicas" % [m.title, own.size()])
+		own_sets.append(own)
+		first_steps.append(series[0])
+	var overlap := false
+	for i in own_sets.size():
+		for j in range(i + 1, own_sets.size()):
+			for id in own_sets[i]:
+				if id in own_sets[j]:
+					overlap = true
+	_check(not overlap, "ninguna ayuda propia se repite entre misiones")
+	var distinct := {}
+	for f in first_steps:
+		distinct[f] = true
+	_check(distinct.size() == first_steps.size(), "cada misión empieza con una ayuda distinta")
+	# En el juego: cada paso apunta a algo visible y la ayuda de inicio es la de la misión
+	for mid in TutorialGuide.SERIES:
+		MissionManager.current = MissionManager.get_mission(mid)
+		var g: Control = load("res://scenes/LunarBase.tscn").instantiate()
+		g._simulated = true
+		add_child(g)
+		await get_tree().process_frame
+		g._build_tutorial()
+		g._tutorial.save_path = "user://tutorial_test2.cfg"
+		g._tutorial.can_show = func() -> bool: return true
+		g._tutorial.notify("start")
+		g._select("greenhouse")
+		await get_tree().process_frame
+		var all_visible := true
+		for id in TutorialGuide.SERIES[mid]:
+			if (g._tutorial_target(str(TutorialGuide.STEPS[id]["target"])) as Rect2).size == Vector2.ZERO:
+				all_visible = false
+				print("     no se ve el objetivo de ", id)
+		_check(all_visible, "%s: todos los pasos apuntan a algo que se ve en pantalla" % MissionManager.current.title)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var want: String = str(TutorialGuide.SERIES[mid][0])
+		_check(g._tutorial.active == want, "%s: la primera ayuda es «%s»" % [MissionManager.current.title, want])
+		g._tutorial.replay()
+		_check(g._tutorial._queue.size() == (TutorialGuide.SERIES[mid] as Array).size(), "«Repetir ayuda» pone en cola la serie completa de la misión")
+		g.queue_free()
+		await get_tree().process_frame
+	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://tutorial_test2.cfg"))
