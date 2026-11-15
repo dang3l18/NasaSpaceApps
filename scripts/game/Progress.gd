@@ -5,10 +5,10 @@ extends RefCounted
 const PATH := "user://progress.cfg"
 
 const ACHIEVEMENTS := [
-	{"id": "first_win", "name": "Primera misión superada", "desc": "Sobrevive los 7 días en la estación."},
-	{"id": "shield_saver", "name": "Escudo salvador", "desc": "Supera la tormenta solar reforzando el blindaje."},
+	{"id": "first_win", "name": "Primera misión superada", "desc": "Completa los 9 turnos del Refugio Lunar."},
+	{"id": "shield_saver", "name": "Escudo de regolito", "desc": "Supera la tormenta solar con el blindaje reforzado."},
 	{"id": "expert", "name": "Astronauta experto", "desc": "Gana una misión en Modo Intermedio."},
-	{"id": "storm_survivor", "name": "Sobreviviente de tormentas", "desc": "Gana ante una tormenta solar fuerte (severidad 3)."},
+	{"id": "storm_survivor", "name": "Sobreviviente de tormentas", "desc": "Gana ante una alerta solar de nivel 3."},
 	{"id": "data_scientist", "name": "Científico de datos", "desc": "Abre el Space Data Center."},
 ]
 

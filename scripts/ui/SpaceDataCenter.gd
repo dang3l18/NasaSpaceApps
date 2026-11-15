@@ -72,6 +72,7 @@ func refresh_all() -> void:
 	var gst := ScientificDataManager.normalize_donki("GST", await NASADataManager.donki("GST", 30))
 	var cross: Dictionary = await ScientificDataManager.get_geomagnetic_crosscheck(gst)
 	_event_cross.text = cross["comparison"] + "  [NOAA SWPC · %s]" % cross["classification"] if cross.get("ok", false) else "NOAA SWPC: sin datos disponibles."
+	await EarthImageryManager.get_earth("lro_wac")
 	await EarthImageryManager.get_earth("blackmarble")
 	await EarthImageryManager.get_earth("viirs_truecolor")
 	_status.text = "Actualizado %s" % Time.get_time_string_from_system(true) + " UTC"
@@ -151,7 +152,7 @@ func _fill_detail(id: String) -> void:
 	_vals["Fuente"].text = d["source"]
 	_vals["Descripción"].text = d["description"]
 	_vals["Fecha del dato"].text = str(d.get("data_date", "sin consulta"))
-	_vals["Fecha de consulta"].text = DatasetManager.format_time(float(d.get("queried_at", 0.0)))
+	_vals["Fecha de consulta"].text = "No aplica (documentación)" if str(d.get("connection", "")) == "ref" else DatasetManager.format_time(float(d.get("queried_at", 0.0)))
 	_vals["Tipo de información"].text = d["info_type"]
 	_vals["Formato"].text = d["format"]
 	_vals["Licencia"].text = d["license"]
@@ -175,6 +176,8 @@ func _label_color(label: String) -> Color:
 		ScientificDataManager.LABEL_REAL: return C_REAL
 		ScientificDataManager.LABEL_HISTORIC: return C_HIST
 		ScientificDataManager.LABEL_SIM: return C_SIM
+		ScientificDataManager.LABEL_REF: return Color("4fc3f7")
+		ScientificDataManager.LABEL_PARAM: return C_SIM
 	return C_NONE
 
 
@@ -184,6 +187,7 @@ func _conn_text(conn: String) -> Array:
 		"cache": return ["● CACHÉ LOCAL (sin conexión nueva)", C_HIST]
 		"rate_limited": return ["● LÍMITE DE LA API", Color("ff9d4d")]
 		"offline": return ["● SIN CONEXIÓN", C_BAD]
+		"ref": return ["● DOCUMENTACIÓN (no es un dato en vivo)", Color("4fc3f7")]
 	return ["● SIN CONSULTAR", C_NONE]
 
 

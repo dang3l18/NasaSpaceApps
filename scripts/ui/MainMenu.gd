@@ -11,11 +11,12 @@ const C_MUTED := Color("8fa8d0")
 const C_GOLD := Color("ffd24d")
 
 const LEARN := [
-	["La Tierra", "Las imágenes de la Tierra del juego vienen de NASA GIBS, que publica fotos de satélites como Terra/MODIS cada día. Los huecos negros son zonas que el satélite no alcanzó a ver ese día."],
+	["La Luna", "La nave LRO de NASA cartografió la superficie lunar y midió su temperatura, composición y entorno de radiación. La imagen de la Luna del juego viene de su cámara (NASA Moon Trek)."],
 	["El Sol", "El Sol lanza llamaradas y nubes de plasma llamadas CME. NASA DONKI las registra. Una tormenta fuerte puede afectar satélites, comunicaciones y astronautas."],
-	["Radiación", "En el espacio no hay atmósfera que nos proteja. Las estaciones usan blindaje y zonas seguras. Por eso en el juego puedes reforzar el blindaje cuando llega una tormenta solar."],
-	["Datos de NASA", "NASA publica datos abiertos: data.nasa.gov, Earthdata, GIBS y DONKI. Puedes ver de dónde viene cada dato, su fecha y si es real, histórico o simulado en el Space Data Center."],
-	["La ISS y los rayos", "Un sensor llamado LIS, instalado en la Estación Espacial Internacional, detectó rayos desde la órbita entre 2017 y 2023 (NASA Earthdata)."],
+	["Radiación", "En la Luna no hay atmósfera que nos proteja. NASA investiga materiales de protección, incluso con regolito lunar (el polvo y las piedras de la Luna). En el juego usas regolito para reforzar el blindaje."],
+	["Soporte vital", "NASA divide el soporte vital en tres partes: recuperar agua, limpiar el aire y producir oxígeno. En el juego, ese sistema gasta energía y necesita mantenimiento."],
+	["Plantas", "NASA cultiva lechugas en el espacio con luces LED como comida fresca extra para la tripulación. Las plantas ayudan, pero no reemplazan a los sistemas de la base."],
+	["Datos de NASA", "En el Space Data Center ves de dónde viene cada dato, su fecha y si es REAL, HISTÓRICO, REFERENCIA o un PARÁMETRO DE SIMULACIÓN del juego."],
 ]
 
 var _earth: ColorRect
@@ -96,7 +97,7 @@ func _build_title() -> void:
 	var t3 := _lbl("MISSION TRAINER", 28, C_GOLD, false)
 	t3.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(t3)
-	var sub := _lbl("Operación: Última Órbita\nAprende · Decide · Sobrevive", 16, C_MUTED, false)
+	var sub := _lbl("Operación: Refugio Lunar\nAprende · Decide · Sobrevive", 16, C_MUTED, false)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(sub)
 	v.add_child(_spacer(16))
@@ -105,7 +106,7 @@ func _build_title() -> void:
 	v.add_child(_btn("Logros", Color("245aa8"), func() -> void: _show("achievements")))
 	v.add_child(_btn("Configuración", Color("245aa8"), func() -> void: _show("config")))
 	v.add_child(_btn("Créditos", Color("245aa8"), func() -> void: _show("credits")))
-	var note := _lbl("Datos reales de NASA · imágenes de NASA GIBS", 12, C_MUTED, false)
+	var note := _lbl("Datos de NASA: DONKI · GIBS · LRO · Earthdata", 12, C_MUTED, false)
 	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(note)
 
@@ -122,8 +123,8 @@ func _build_modes() -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
 	v.add_child(row)
-	row.add_child(_mode_card("🚀  MODO PRINCIPIANTE", "7–9 años", "3 acciones por turno\nConsumo de recursos menor", "principiante", Color("2f7de0")))
-	row.add_child(_mode_card("⭐  MODO INTERMEDIO", "10–12 años", "2 acciones por turno\nConsumo normal", "intermedio", Color("e0a02f")))
+	row.add_child(_mode_card("🚀  MODO PRINCIPIANTE", "7–9 años", "+4 horas de trabajo por turno\nAlertas solares más suaves", "principiante", Color("2f7de0")))
+	row.add_child(_mode_card("⭐  MODO INTERMEDIO", "10–12 años", "Horas de trabajo normales\nAlertas solares completas", "intermedio", Color("e0a02f")))
 	var row2 := HBoxContainer.new()
 	row2.add_theme_constant_override("separation", 14)
 	v.add_child(row2)
@@ -147,7 +148,7 @@ func _mode_card(title: String, age: String, desc: String, mode: String, col: Col
 	b.add_theme_stylebox_override("pressed", _box(col.darkened(0.5), col.lightened(0.3), 3, 12))
 	b.pressed.connect(func() -> void:
 		GameSettings.mode = mode
-		get_tree().change_scene_to_file("res://scenes/OrbitalStation.tscn"))
+		get_tree().change_scene_to_file("res://scenes/LunarBase.tscn"))
 	return b
 
 
@@ -234,7 +235,7 @@ func _build_config() -> void:
 func _fill_config() -> void:
 	for c in _cfg_list.get_children():
 		c.queue_free()
-	var conn_txt := {"online": ["● En línea", Color("2ecc71")], "cache": ["● Caché local", Color("f1b434")],
+	var conn_txt := {"online": ["● En línea", Color("2ecc71")], "cache": ["● Caché local", Color("f1b434")], "ref": ["● Documentación", Color("4fc3f7")],
 			"rate_limited": ["● Límite de la API", Color("ff9d4d")], "offline": ["● Sin conexión", Color("ff5d5d")]}
 	for d in DatasetManager.get_all():
 		var c: String = str(d.get("connection", "none"))

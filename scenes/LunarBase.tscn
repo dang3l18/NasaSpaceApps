@@ -1,8 +1,8 @@
 [gd_scene load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://scripts/game/OrbitalStation.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/game/LunarBase.gd" id="1"]
 
-[node name="OrbitalStation" type="Control"]
+[node name="LunarBase" type="Control"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0

@@ -121,6 +121,80 @@
       "format": "JSON",
       "license": "Datos públicos del gobierno de EE. UU. (NOAA)",
       "attribution": "NOAA Space Weather Prediction Center"
+    },
+    {
+      "id": "lro_wac_moontrek", "phase": "L", "source": "NASA LRO · Moon Trek",
+      "name": "Luna real: mosaico LRO WAC",
+      "description": "Imagen real de la superficie lunar (mosaico global de la cámara gran angular de LRO). Se usa en la presentación de la misión.",
+      "info_type": "Observación de la Luna",
+      "url_original": "https://trek.nasa.gov/moon/",
+      "endpoint": "https://trek.nasa.gov/tiles/Moon/EQ/LRO_WAC_Mosaic_Global_303ppd_v02/",
+      "format": "WMTS (JPEG)",
+      "license": "Imágenes de NASA; ver la política de uso de medios de NASA",
+      "attribution": "NASA Lunar Reconnaissance Orbiter · NASA Moon Trek"
+    },
+    {
+      "id": "ref_lro", "phase": "R", "kind": "reference", "source": "NASA LRO",
+      "name": "LRO: cartografía y entorno lunar",
+      "description": "NASA indica que LRO cartografió la superficie lunar y midió su temperatura, composición y entorno de radiación. Contexto de la localización; no se afirma que la base tenga agua accesible.",
+      "info_type": "Referencia científica",
+      "url_original": "https://science.nasa.gov/mission/lro/",
+      "endpoint": "-", "format": "Página web",
+      "license": "Contenido de NASA", "attribution": "NASA Science · LRO"
+    },
+    {
+      "id": "ref_pds_lro", "phase": "R", "kind": "reference", "source": "NASA Planetary Data System",
+      "name": "PDS: productos científicos de LRO",
+      "description": "Archivo oficial de los datos científicos de LRO (LOLA, LROC y otros). Solo se enlaza: los archivos son muy grandes y no se descargan.",
+      "info_type": "Referencia científica",
+      "url_original": "https://pds-geosciences.wustl.edu/missions/lro/",
+      "endpoint": "-", "format": "Catálogo web",
+      "license": "Datos abiertos de NASA PDS", "attribution": "NASA Planetary Data System · Geosciences Node"
+    },
+    {
+      "id": "ref_eclss", "phase": "R", "kind": "reference", "source": "NASA ECLSS",
+      "name": "Soporte vital (ECLSS)",
+      "description": "NASA divide el soporte vital en recuperación de agua, revitalización del aire y generación de oxígeno. Explica las funciones del módulo de soporte vital.",
+      "info_type": "Referencia científica",
+      "url_original": "https://www.nasa.gov/reference/environmental-control-and-life-support-systems-eclss/",
+      "endpoint": "-", "format": "Página web",
+      "license": "Contenido de NASA", "attribution": "NASA · ECLSS"
+    },
+    {
+      "id": "ref_radiation", "phase": "R", "kind": "reference", "source": "NASA Radiation Protection",
+      "name": "Protección contra la radiación",
+      "description": "NASA investiga materiales de protección, como compuestos de polímero y regolito lunar. Explica por qué el blindaje usa materiales.",
+      "info_type": "Referencia científica",
+      "url_original": "https://www.nasa.gov/radiation-protection/",
+      "endpoint": "-", "format": "Página web",
+      "license": "Contenido de NASA", "attribution": "NASA · Radiation Protection"
+    },
+    {
+      "id": "ref_moonbase", "phase": "R", "kind": "reference", "source": "NASA Moon Base Systems",
+      "name": "Sistemas de la base lunar",
+      "description": "NASA estudia energía de superficie, rovers y logística para sostener una base durante las largas noches lunares. Inspira las mecánicas de energía y materiales.",
+      "info_type": "Referencia científica",
+      "url_original": "https://www.nasa.gov/moonbase-systems/",
+      "endpoint": "-", "format": "Página web",
+      "license": "Contenido de NASA", "attribution": "NASA · Moon Base Systems"
+    },
+    {
+      "id": "ref_veggie", "phase": "R", "kind": "reference", "source": "NASA Veggie",
+      "name": "Cultivos espaciales (Veggie)",
+      "description": "NASA cultiva lechugas y otras hojas con luces LED como alimento fresco complementario para la tripulación. Por eso en el juego las plantas complementan, no reemplazan, al soporte vital.",
+      "info_type": "Referencia científica",
+      "url_original": "https://science.nasa.gov/mission/veggie/",
+      "endpoint": "-", "format": "Página web",
+      "license": "Contenido de NASA", "attribution": "NASA Science · Veggie"
+    },
+    {
+      "id": "sim_params", "phase": "R", "kind": "parameter", "source": "Junior Astronaut (juego)",
+      "name": "Parámetros de la simulación",
+      "description": "Las cifras de energía, materiales, horas, consumos y exposición son valores de juego ajustables (SimConfig.gd). NO son mediciones ni cifras reales de NASA. El aporte de aire y agua de las plantas también es un parámetro de simulación.",
+      "info_type": "Parámetros del juego",
+      "url_original": "https://github.com/dang3l18/NasaSpaceApps",
+      "endpoint": "-", "format": "Código (GDScript)",
+      "license": "Proyecto educativo", "attribution": "Junior Astronaut: Mission Trainer"
     }
   ]
 }

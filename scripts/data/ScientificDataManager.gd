@@ -10,6 +10,8 @@ extends Node
 const LABEL_REAL := "DATO REAL"
 const LABEL_HISTORIC := "DATO HISTÓRICO"
 const LABEL_SIM := "SIMULACIÓN EDUCATIVA"
+const LABEL_REF := "REFERENCIA NASA"                  # documentacion oficial citada, no un dato medido
+const LABEL_PARAM := "PARÁMETRO DE SIMULACIÓN"        # valor de juego, no una cifra real
 
 const REAL_EVENT_MAX_AGE := 7 * 86400
 const REAL_QUERY_MAX_AGE := 6 * 3600

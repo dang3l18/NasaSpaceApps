@@ -11,6 +11,7 @@ const STATE_PATH := "user://cache/dataset_state.json"
 var _datasets: Array = []
 var _index: Dictionary = {}
 var _state: Dictionary = {}
+var _fixed_state: Dictionary = {}
 
 
 func _ready() -> void:
@@ -25,8 +26,18 @@ func _load_registry() -> void:
 		_datasets = parsed.get("datasets", [])
 	else:
 		push_error("DatasetManager: no se pudo leer %s" % REGISTRY_PATH)
+	var sci := preload("res://scripts/data/ScientificDataManager.gd")
 	for d in _datasets:
 		_index[d["id"]] = d
+		# Referencias y parametros no se "consultan": se rotulan por su naturaleza.
+		var kind := str(d.get("kind", ""))
+		if kind == "reference" or kind == "parameter":
+			_fixed_state[d["id"]] = {
+				"connection": "ref",
+				"classification": sci.LABEL_REF if kind == "reference" else sci.LABEL_PARAM,
+				"data_date": "Documentación de NASA (enlace verificado el 2026-11-14)" if kind == "reference" else "Valores del juego (no son datos reales)",
+				"queried_at": 0.0, "note": "", "origin": "doc",
+			}
 
 
 func _load_state() -> void:
@@ -56,6 +67,7 @@ func get_dataset(id: String) -> Dictionary:
 		return {}
 	var d: Dictionary = (_index[id] as Dictionary).duplicate()
 	d.merge(_state.get(id, {}), true)
+	d.merge(_fixed_state.get(id, {}), true)
 	return d
 
 

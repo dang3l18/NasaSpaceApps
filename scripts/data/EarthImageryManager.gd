@@ -21,6 +21,12 @@ const LAYERS := {
 		"dataset_id": "gibs_viirs_truecolor", "layer": "VIIRS_SNPP_CorrectedReflectance_TrueColor",
 		"format": "image/jpeg", "ext": "jpg", "temporal": true,
 	},
+	# Luna real: teselas WMTS del mosaico LRO WAC en NASA Moon Trek (sin clave; comprobado 2026-11-14).
+	"lro_wac": {
+		"dataset_id": "lro_wac_moontrek",
+		"tile_url": "https://trek.nasa.gov/tiles/Moon/EQ/LRO_WAC_Mosaic_Global_303ppd_v02/1.0.0/default/default028mm/0/0/0.jpg",
+		"format": "image/jpeg", "ext": "jpg", "temporal": false,
+	},
 	"blackmarble": {
 		"dataset_id": "gibs_blackmarble", "layer": "VIIRS_Black_Marble",
 		"format": "image/png", "ext": "png", "temporal": false,
@@ -103,6 +109,8 @@ func get_earth(layer_key: String = "modis_truecolor") -> Dictionary:
 # ------------------------------------------------------------- INTERNOS ----
 
 func _wms_url(cfg: Dictionary, date: String) -> String:
+	if cfg.has("tile_url"):
+		return str(cfg["tile_url"])
 	var url := "%s?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=%s&STYLES=&CRS=EPSG:4326&BBOX=-90,-180,90,180&WIDTH=%d&HEIGHT=%d&FORMAT=%s" % [
 		WMS_URL, cfg.layer, IMG_W, IMG_H, cfg.format.uri_encode()]
 	if date != "":
@@ -151,7 +159,7 @@ func _fail(layer_key: String, error: String) -> Dictionary:
 func _report(layer_key: String, connection: String, date: String, queried: float, note: String) -> void:
 	DatasetManager.report(LAYERS[layer_key].dataset_id, {
 		"connection": connection, "note": note, "queried_at": queried,
-		"data_date": date if date != "" else "capa por defecto (sin fecha diaria)",
+		"data_date": date if date != "" else ("mosaico (sin una fecha de captura única)" if LAYERS[layer_key].has("tile_url") else "capa por defecto (sin fecha diaria)"),
 		"classification": _classification(date, queried, connection == "offline"),
 		"origin": "network" if connection == "online" else "cache",
 	})
