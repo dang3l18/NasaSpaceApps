@@ -23,8 +23,17 @@ var _selected := ""
 var _buttons: Dictionary = {}
 var _list: VBoxContainer
 var _status: Label
-var _earth_rect: TextureRect
-var _earth_caption: Label
+var _prev_tex: TextureRect
+var _prev_chart: Control
+var _prev_info: Label
+var _prev_caption: Label
+var _chart_fn := Callable()
+var _imgs: Dictionary = {}
+var _preview_for := ""
+
+const LAYER_OF := {"gibs_modis_truecolor": "modis_truecolor", "gibs_viirs_truecolor": "viirs_truecolor",
+		"gibs_blackmarble": "blackmarble", "lro_wac_moontrek": "lro_wac"}
+const KIND_OF := {"donki_flr": "FLR", "donki_cme": "CME", "donki_gst": "GST", "donki_sep": "SEP"}
 var _badge: Label
 var _title: Label
 var _vals: Dictionary = {}
@@ -39,7 +48,11 @@ func _ready() -> void:
 	_build_ui()
 	_populate_list()
 	DatasetManager.dataset_updated.connect(_on_dataset_updated)
-	_select(DatasetManager.get_all()[0].id)
+	var first: String = DatasetManager.get_all()[0].id
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--select="):
+			first = a.substr(9)
+	_select(first)
 	await refresh_all()
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shot="):
@@ -55,13 +68,15 @@ func refresh_all() -> void:
 		return
 	_busy = true
 	_status.text = "Consultando fuentes..."
-	var earth: Dictionary = await EarthImageryManager.get_earth("modis_truecolor")
-	_show_earth(earth)
+	_imgs["modis_truecolor"] = await EarthImageryManager.get_earth("modis_truecolor")
+	_show_preview(_selected)
 	var progress := func(done: int, total: int) -> void:
 		_status.text = "Cargando archivo DONKI 2025–2026: %d%%" % int(100.0 * done / total)
 	ScientificDataManager.history_progress.connect(progress)
 	await ScientificDataManager.ensure_history()
 	ScientificDataManager.history_progress.disconnect(progress)
+	_status.text = "Consultando fuentes..."
+	_show_preview(_selected)
 	var ev: Dictionary = await ScientificDataManager.build_solar_event()
 	_show_event(ev)
 	var hs := ScientificDataManager.history_summary()
@@ -72,23 +87,201 @@ func refresh_all() -> void:
 	var gst := ScientificDataManager.normalize_donki("GST", await NASADataManager.donki("GST", 30))
 	var cross: Dictionary = await ScientificDataManager.get_geomagnetic_crosscheck(gst)
 	_event_cross.text = cross["comparison"] + "  [NOAA SWPC · %s]" % cross["classification"] if cross.get("ok", false) else "NOAA SWPC: sin datos disponibles."
-	await EarthImageryManager.get_earth("lro_wac")
-	await EarthImageryManager.get_earth("blackmarble")
-	await EarthImageryManager.get_earth("viirs_truecolor")
+	for key in ["lro_wac", "blackmarble", "viirs_truecolor"]:
+		_imgs[key] = await EarthImageryManager.get_earth(key)
 	_status.text = "Actualizado %s" % Time.get_time_string_from_system(true) + " UTC"
 	_busy = false
+	_show_preview(_selected)
 
 
-func _show_earth(r: Dictionary) -> void:
-	if r.get("ok", false):
-		_earth_rect.texture = r["texture"]
-		var how := "caché local" if r["from_cache"] else "descarga NASA GIBS"
-		_earth_caption.text = "Tierra · MODIS Terra · imagen del %s · %s · %s" % [r["image_date"], how, r["classification"]]
-		_earth_caption.add_theme_color_override("font_color", _label_color(r["classification"]))
+# ---------------------------------------------------- VISTA PREVIA POR DATO ----
+## El recuadro de la izquierda cambia con el dato elegido: imagen real (GIBS, LRO), grafico
+## hecho con los datos reales (DONKI, NOAA, CMR) o una tarjeta para documentacion y parametros.
+
+func _prev_mode(mode: String) -> void:
+	_prev_tex.visible = mode == "image"
+	_prev_chart.visible = mode == "chart"
+	_prev_info.visible = mode == "info"
+
+
+func _caption(text: String, label: String = "") -> void:
+	_prev_caption.text = text
+	_prev_caption.add_theme_color_override("font_color", _label_color(label) if label != "" else C_MUTED)
+
+
+func _show_preview(id: String) -> void:
+	_preview_for = id
+	var d := DatasetManager.get_dataset(id)
+	var label := _label_of(d)
+	if LAYER_OF.has(id):
+		var key: String = LAYER_OF[id]
+		if not _imgs.has(key):
+			_prev_mode("info")
+			_prev_info.text = "Cargando imagen…"
+			_imgs[key] = await EarthImageryManager.get_earth(key)
+			if _preview_for != id:
+				return
+		var r: Dictionary = _imgs[key]
+		if r.get("ok", false):
+			_prev_mode("image")
+			_prev_tex.texture = r["texture"]
+			var when: String = r["image_date"] if r["image_date"] != "" else "mosaico / capa por defecto"
+			var how := "caché local" if r["from_cache"] else "descargada ahora"
+			_caption("%s · %s · %s · %s" % [d["name"], when, how, r["classification"]], r["classification"])
+		else:
+			_prev_mode("info")
+			_prev_info.text = "🖼 Imagen no disponible\n(%s)" % r.get("error", "sin conexión")
+			_caption("Sin conexión y sin copia guardada. El juego sigue funcionando.", "")
+	elif KIND_OF.has(id):
+		_prev_mode("chart")
+		if not ScientificDataManager.history_loaded:
+			_chart_fn = Callable()
+			_prev_chart.queue_redraw()
+			_prev_mode("info")
+			_prev_info.text = "⏳ Cargando el archivo 2025–2026…"
+			_caption("Se descarga por tramos de 30 días y se guarda en caché.", "")
+			return
+		_chart_fn = _draw_monthly.bind(KIND_OF[id])
+		_prev_chart.queue_redraw()
+		_caption("%s por mes (2025 → hoy) · NASA DONKI · %s" % [d["name"], ScientificDataManager.LABEL_HISTORIC], ScientificDataManager.LABEL_HISTORIC)
+	elif id == "noaa_swpc":
+		var res: Dictionary = await NASADataManager.noaa("noaa-planetary-k-index")
+		if _preview_for != id:
+			return
+		if res.get("ok", false) and res["data"] is Array and (res["data"] as Array).size() > 0:
+			_prev_mode("chart")
+			_chart_fn = _draw_kp.bind(res["data"])
+			_prev_chart.queue_redraw()
+			_caption("Índice Kp cada 3 h (últimos %d valores) · NOAA SWPC · %s" % [(res["data"] as Array).size(), label], label)
+		else:
+			_prev_mode("info")
+			_prev_info.text = "📉 Sin datos de NOAA ahora"
+			_caption("Sin conexión y sin copia guardada.", "")
+	elif id == "cmr_isslis":
+		var ctx: Dictionary = await ScientificDataManager.get_station_context()
+		if _preview_for != id:
+			return
+		if ctx.get("ok", false):
+			_prev_mode("chart")
+			_chart_fn = _draw_coverage.bind(ctx["record"])
+			_prev_chart.queue_redraw()
+			_caption("Cobertura del sensor LIS (ISS) · NASA Earthdata · %s" % ScientificDataManager.LABEL_HISTORIC, ScientificDataManager.LABEL_HISTORIC)
+		else:
+			_prev_mode("info")
+			_prev_info.text = "🛰 Sin datos de Earthdata ahora"
+			_caption("Sin conexión y sin copia guardada.", "")
+	elif id == "donki_notifications" or id == "donki_wsa":
+		var kind := "notifications" if id == "donki_notifications" else "WSAEnlilSimulations"
+		var res: Dictionary = await NASADataManager.donki(kind, 30)
+		if _preview_for != id:
+			return
+		var recs: Array = ScientificDataManager.normalize_donki(kind, res)
+		recs.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["event_time"]) > float(b["event_time"]))
+		_prev_mode("info")
+		if recs.is_empty():
+			_prev_info.text = "Sin %s en los últimos 30 días" % ("avisos" if kind == "notifications" else "simulaciones")
+			_caption("Sin datos ahora (o sin conexión y sin copia guardada).", "")
+		else:
+			var lines: PackedStringArray = ["Lo más reciente:"]
+			for r in recs.slice(0, 4):
+				lines.append("• %s · %s" % [Time.get_date_string_from_unix_time(int(r["event_time"])), str(r["title"])])
+			_prev_info.text = "\n".join(lines)
+			_caption("%d en los últimos 30 días · NASA DONKI · %s" % [recs.size(), label], label)
 	else:
-		_earth_rect.texture = null
-		_earth_caption.text = "Imagen de la Tierra no disponible (%s)" % r.get("error", "sin conexión")
-		_earth_caption.add_theme_color_override("font_color", C_BAD)
+		_prev_mode("info")
+		var is_ref := str(d.get("kind", "")) == "reference"
+		_prev_info.text = ("📚 Documentación oficial de NASA\n\nSe cita dentro del juego y se enlaza abajo." if is_ref
+				else ("⚙ Parámetros del juego\n\nSon valores de simulación, no datos medidos." if str(d.get("kind", "")) == "parameter"
+				else "Sin vista previa para este conjunto de datos.\n\nSolo informativo."))
+		_caption(label, label)
+
+
+func _txt(c: Control, text: String, pos: Vector2, size: int, col: Color) -> void:
+	c.draw_string(ThemeDB.fallback_font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
+
+
+func _draw_monthly(c: Control, kind: String) -> void:
+	var w := c.size.x
+	var h := c.size.y
+	var now_d := Time.get_datetime_dict_from_unix_time(int(Time.get_unix_time_from_system()))
+	var months := (int(now_d["year"]) - 2025) * 12 + int(now_d["month"])
+	var counts: Array = []
+	var strong: Array = []
+	for i in months:
+		counts.append(0)
+		strong.append(0)
+	for r in ScientificDataManager.history:
+		if r["kind"] != kind:
+			continue
+		var dt := Time.get_datetime_dict_from_unix_time(int(r["event_time"]))
+		var idx := (int(dt["year"]) - 2025) * 12 + int(dt["month"]) - 1
+		if idx >= 0 and idx < months:
+			counts[idx] += 1
+			if int(r["severity"]) >= 2:
+				strong[idx] += 1
+	var mx := 1
+	for v in counts:
+		mx = maxi(mx, int(v))
+	c.draw_rect(Rect2(0, 0, w, h), Color("0a1330"))
+	var base := h - 22.0
+	var bw := (w - 16.0) / months
+	for i in months:
+		var bh := (base - 22.0) * float(counts[i]) / mx
+		c.draw_rect(Rect2(8 + i * bw + 1, base - bh, bw - 2, bh), Color("3f6fd0"))
+		var sh := (base - 22.0) * float(strong[i]) / mx
+		c.draw_rect(Rect2(8 + i * bw + 1, base - sh, bw - 2, sh), Color("ffb13d"))
+	c.draw_line(Vector2(8, base), Vector2(w - 8, base), C_MUTED, 1.0)
+	_txt(c, "máx. %d por mes" % mx, Vector2(8, 14), 12, C_TEXT)
+	_txt(c, "ene 2025", Vector2(8, h - 6), 11, C_MUTED)
+	_txt(c, "hoy", Vector2(w - 28, h - 6), 11, C_MUTED)
+	c.draw_rect(Rect2(w - 196, 5, 9, 9), Color("3f6fd0"))
+	_txt(c, "eventos", Vector2(w - 184, 14), 11, C_TEXT)
+	c.draw_rect(Rect2(w - 128, 5, 9, 9), Color("ffb13d"))
+	_txt(c, "fuertes (nivel ≥2)", Vector2(w - 116, 14), 11, C_TEXT)
+
+
+func _draw_kp(c: Control, data: Array) -> void:
+	var w := c.size.x
+	var h := c.size.y
+	c.draw_rect(Rect2(0, 0, w, h), Color("0a1330"))
+	var n := data.size()
+	var base := h - 20.0
+	var bw := (w - 16.0) / maxf(1.0, n)
+	for i in n:
+		var kp := float(data[i].get("Kp", 0.0))
+		var bh := (base - 20.0) * kp / 9.0
+		var col := C_REAL if kp < 4.0 else (C_HIST if kp < 5.0 else C_BAD)
+		c.draw_rect(Rect2(8 + i * bw + 0.5, base - bh, maxf(1.0, bw - 1.0), bh), col)
+	var y5 := base - (base - 20.0) * 5.0 / 9.0
+	c.draw_line(Vector2(8, y5), Vector2(w - 8, y5), C_BAD, 1.0)
+	_txt(c, "Kp 5 = tormenta geomagnética", Vector2(10, y5 - 4), 11, C_BAD)
+	c.draw_line(Vector2(8, base), Vector2(w - 8, base), C_MUTED, 1.0)
+	_txt(c, "hace ~%d días" % int(round(n * 3.0 / 24.0)), Vector2(8, h - 5), 11, C_MUTED)
+	_txt(c, "ahora", Vector2(w - 38, h - 5), 11, C_MUTED)
+
+
+func _draw_coverage(c: Control, rec: Dictionary) -> void:
+	var w := c.size.x
+	var h := c.size.y
+	c.draw_rect(Rect2(0, 0, w, h), Color("0a1330"))
+	var y0 := 2015.0
+	var y1 := 2027.0
+	var f := func(unix: float) -> float:
+		var dt := Time.get_datetime_dict_from_unix_time(int(unix))
+		var yr := float(dt["year"]) + (float(dt["month"]) - 1.0) / 12.0
+		return 12.0 + (yr - y0) / (y1 - y0) * (w - 24.0)
+	var xs: float = f.call(float(rec["coverage_start"]))
+	var xe: float = f.call(float(rec["coverage_end"]))
+	var xn: float = f.call(Time.get_unix_time_from_system())
+	c.draw_line(Vector2(12, h * 0.55), Vector2(w - 12, h * 0.55), C_MUTED, 1.0)
+	c.draw_rect(Rect2(xs, h * 0.55 - 14, maxf(2.0, xe - xs), 28), Color("3f6fd0"))
+	c.draw_line(Vector2(xn, h * 0.3), Vector2(xn, h * 0.8), C_BAD, 2.0)
+	_txt(c, "hoy", Vector2(xn - 10, h * 0.3 - 4), 12, C_BAD)
+	_txt(c, "Sensor LIS en la ISS", Vector2(12, 20), 14, C_TEXT)
+	_txt(c, "%s → %s" % [Time.get_date_string_from_unix_time(int(rec["coverage_start"])), Time.get_date_string_from_unix_time(int(rec["coverage_end"]))], Vector2(12, 38), 12, C_HIST)
+	_txt(c, "2015", Vector2(12, h - 8), 11, C_MUTED)
+	_txt(c, "2027", Vector2(w - 36, h - 8), 11, C_MUTED)
+	_txt(c, "La misión de datos terminó: es histórico", Vector2(12, h - 26), 11, C_MUTED)
 
 
 func _show_event(ev: Dictionary) -> void:
@@ -138,6 +331,7 @@ func _select(id: String) -> void:
 		_style_button(prev)
 	_style_button(id)
 	_fill_detail(id)
+	_show_preview(id)
 
 
 # ---------------------------------------------------------------- DETALLE ----
@@ -151,6 +345,8 @@ func _fill_detail(id: String) -> void:
 	_badge.add_theme_color_override("font_color", _label_color(label))
 	_vals["Fuente"].text = d["source"]
 	_vals["Descripción"].text = d["description"]
+	_vals["Uso en la misión"].text = str(d.get("game_use", "—"))
+	_vals["Uso en la misión"].add_theme_color_override("font_color", Color("ffe08a"))
 	_vals["Fecha del dato"].text = str(d.get("data_date", "sin consulta"))
 	_vals["Fecha de consulta"].text = "No aplica (documentación)" if str(d.get("connection", "")) == "ref" else DatasetManager.format_time(float(d.get("queried_at", 0.0)))
 	_vals["Tipo de información"].text = d["info_type"]
@@ -184,7 +380,7 @@ func _label_color(label: String) -> Color:
 func _conn_text(conn: String) -> Array:
 	match conn:
 		"online": return ["● EN LÍNEA", C_REAL]
-		"cache": return ["● CACHÉ LOCAL (sin conexión nueva)", C_HIST]
+		"cache": return ["● CACHÉ LOCAL (copia guardada en tu equipo)", C_HIST]
 		"rate_limited": return ["● LÍMITE DE LA API", Color("ff9d4d")]
 		"offline": return ["● SIN CONEXIÓN", C_BAD]
 		"ref": return ["● DOCUMENTACIÓN (no es un dato en vivo)", Color("4fc3f7")]
@@ -238,17 +434,37 @@ func _build_ui() -> void:
 	var lv := VBoxContainer.new()
 	lv.add_theme_constant_override("separation", 6)
 	left.add_child(lv)
-	_earth_rect = TextureRect.new()
-	_earth_rect.custom_minimum_size = Vector2(0, 170)
-	_earth_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_earth_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	lv.add_child(_earth_rect)
-	_earth_caption = Label.new()
-	_earth_caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_earth_caption.text = "Cargando imagen de la Tierra..."
-	_earth_caption.add_theme_font_size_override("font_size", 12)
-	_earth_caption.add_theme_color_override("font_color", C_MUTED)
-	lv.add_child(_earth_caption)
+	var pv := Control.new()
+	pv.custom_minimum_size = Vector2(0, 170)
+	lv.add_child(pv)
+	_prev_tex = TextureRect.new()
+	_prev_tex.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_prev_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_prev_tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	pv.add_child(_prev_tex)
+	_prev_chart = Control.new()
+	_prev_chart.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_prev_chart.visible = false
+	_prev_chart.draw.connect(func() -> void:
+		if _chart_fn.is_valid():
+			_chart_fn.call(_prev_chart))
+	pv.add_child(_prev_chart)
+	_prev_info = Label.new()
+	_prev_info.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_prev_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_prev_info.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_prev_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_prev_info.add_theme_font_size_override("font_size", 15)
+	_prev_info.add_theme_color_override("font_color", C_TEXT)
+	_prev_info.visible = false
+	pv.add_child(_prev_info)
+	_prev_caption = Label.new()
+	_prev_caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_prev_caption.custom_minimum_size = Vector2(0, 34)
+	_prev_caption.text = "Cargando…"
+	_prev_caption.add_theme_font_size_override("font_size", 12)
+	_prev_caption.add_theme_color_override("font_color", C_MUTED)
+	lv.add_child(_prev_caption)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -287,7 +503,7 @@ func _build_ui() -> void:
 	grid.add_theme_constant_override("h_separation", 16)
 	grid.add_theme_constant_override("v_separation", 6)
 	dv.add_child(grid)
-	for k in ["Fuente", "Descripción", "Fecha del dato", "Fecha de consulta", "Tipo de información",
+	for k in ["Fuente", "Descripción", "Uso en la misión", "Fecha del dato", "Fecha de consulta", "Tipo de información",
 			"Estado de conexión", "Formato", "Licencia", "Atribución"]:
 		var kl := Label.new()
 		kl.text = k

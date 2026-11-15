@@ -248,7 +248,7 @@ func get_geomagnetic_crosscheck(donki_gst: Array = []) -> Dictionary:
 	})
 	return {
 		"ok": true, "kp_now": float(last.get("Kp", 0.0)), "kp_time": kp_time, "kp_max_72h": kp_max,
-		"g_scale": g, "s_scale": s, "r_scale": r, "classification": label,
+		"g_scale": g, "s_scale": s, "r_scale": r, "classification": label, "retrieved_at": retrieved,
 		"origin": kp_res["origin"], "connection": st.get("state", "cache"), "comparison": comparison,
 		"source": "NOAA SWPC", "link": "https://www.swpc.noaa.gov/",
 	}
@@ -457,11 +457,16 @@ func _report_donki(kind: String, res: Dictionary, recs: Array) -> void:
 		label = LABEL_SIM
 	elif not recs.is_empty():
 		label = classify(latest, res.get("retrieved_at", 0.0))
-	var archive_n := 0
-	for r in history:
-		if r["kind"] == kind:
-			archive_n += 1
-	var archive := (" · archivo %s→hoy: %d eventos" % [HISTORY_FROM, archive_n]) if history_loaded else ""
+	# El archivo 2025-2026 solo existe para FLR, CME, GST y SEP: notificaciones y WSA-Enlil no lo tienen.
+	var archive := ""
+	if history_loaded and kind in KINDS_HISTORY:
+		var archive_n := 0
+		for r in history:
+			if r["kind"] == kind:
+				archive_n += 1
+		archive = " · archivo %s→hoy: %d eventos" % [HISTORY_FROM, archive_n]
+	var noun := "avisos" if kind == "notifications" else ("simulaciones" if kind == "WSAEnlilSimulations" else "eventos")
+	archive = (" · %d %s en 30 días" % [recs.size(), noun] if recs.size() > 0 and not (kind in KINDS_HISTORY) else "") + archive
 	DatasetManager.report(ds_id, {
 		"connection": st.get("state", "offline"),
 		"note": st.get("message", ""),

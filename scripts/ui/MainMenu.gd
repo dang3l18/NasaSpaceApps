@@ -10,14 +10,18 @@ const C_TEXT := Color("e8f1ff")
 const C_MUTED := Color("8fa8d0")
 const C_GOLD := Color("ffd24d")
 
+## [titulo, tipo, texto corto]. Los tipos moon/earth/sun/radiation/data consultan datos reales de
+## NASA/NOAA al abrirse; ref_* son documentacion (no hay una medicion en vivo de ese tema).
 const LEARN := [
-	["La Luna", "La nave LRO de NASA cartografió la superficie lunar y midió su temperatura, composición y entorno de radiación. La imagen de la Luna del juego viene de su cámara (NASA Moon Trek)."],
-	["El Sol", "El Sol lanza llamaradas y nubes de plasma llamadas CME. NASA DONKI las registra. Una tormenta fuerte puede afectar satélites, comunicaciones y astronautas."],
-	["Radiación", "En la Luna no hay atmósfera que nos proteja. NASA investiga materiales de protección, incluso con regolito lunar (el polvo y las piedras de la Luna). En el juego usas regolito para reforzar el blindaje."],
-	["Soporte vital", "NASA divide el soporte vital en tres partes: recuperar agua, limpiar el aire y producir oxígeno. En el juego, ese sistema gasta energía y necesita mantenimiento."],
-	["Plantas", "NASA cultiva lechugas en el espacio con luces LED como comida fresca extra para la tripulación. Las plantas ayudan, pero no reemplazan a los sistemas de la base."],
-	["Datos de NASA", "En el Space Data Center ves de dónde viene cada dato, su fecha y si es REAL, HISTÓRICO, REFERENCIA o un PARÁMETRO DE SIMULACIÓN del juego."],
+	["🌙 La Luna", "moon", "La nave LRO de NASA cartografió la superficie lunar y midió su temperatura, composición y entorno de radiación."],
+	["🌍 La Tierra hoy", "earth", "Así se ve la Tierra desde el espacio. NASA GIBS publica imágenes de satélite casi todos los días."],
+	["☀ El Sol hoy", "sun", "El Sol lanza llamaradas y nubes de plasma llamadas CME. NASA DONKI las registra todos los días."],
+	["☢ Radiación hoy", "radiation", "En la Luna no hay atmósfera que nos proteja. NOAA mide las tormentas de radiación solar con la escala S."],
+	["💨 Soporte vital", "ref_eclss", "NASA divide el soporte vital en tres partes: recuperar agua, limpiar el aire y producir oxígeno. En el juego ese sistema gasta energía y necesita mantenimiento."],
+	["🌱 Plantas", "ref_veggie", "NASA cultiva lechugas en el espacio con luces LED como comida fresca extra. Las plantas ayudan, pero no reemplazan a los sistemas de la base."],
+	["📊 Datos de NASA", "data", "Estas son las fuentes que usa el juego y cuándo se consultaron por última vez."],
 ]
+const ORIGIN_TEXT := {"network": "descargado ahora", "cache_fresh": "copia guardada vigente", "cache_stale": "copia guardada (sin conexión)", "none": "sin datos"}
 
 var _earth: ColorRect
 var _astro: Control
@@ -25,8 +29,11 @@ var _screens: Dictionary = {}
 var _t := 0.0
 var _stars: Array = []
 var _stars_node: Control
-var _learn_text: Label
+var _learn_box: VBoxContainer
 var _learn_buttons: Array = []
+var _learn_token := 0
+var _learn_cur := 0
+var _learn_last_refresh := 0
 var _ach_list: VBoxContainer
 var _cfg_list: VBoxContainer
 var _credits_list: VBoxContainer
@@ -49,6 +56,9 @@ func _ready() -> void:
 		if a.begins_with("--screen="):
 			first = a.substr(9)
 	_show(first)
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--topic="):
+			_pick_topic(clampi(int(a.substr(8)), 0, LEARN.size() - 1))
 	_fade_in()
 	_load_earth()
 	for a in OS.get_cmdline_user_args():
@@ -174,20 +184,182 @@ func _build_learn() -> void:
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.add_theme_stylebox_override("panel", _box(Color("0f2150"), C_BORDER, 2, 12))
 	body.add_child(panel)
-	_learn_text = _lbl("", 17, C_TEXT, true)
-	_learn_text.custom_minimum_size = Vector2(500, 200)
-	panel.add_child(_learn_text)
-	var cap := _lbl("Texto educativo del juego. Los datos con fecha y fuente están en el Space Data Center.", 12, C_MUTED, true)
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(520, 330)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	panel.add_child(sc)
+	_learn_box = VBoxContainer.new()
+	_learn_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_learn_box.add_theme_constant_override("separation", 8)
+	sc.add_child(_learn_box)
+	var cap := _lbl("Los temas con ☀ 🌍 🌙 ☢ 📊 consultan datos reales de NASA/NOAA al abrirse (con copia guardada si no hay internet).", 12, C_MUTED, true)
 	v.add_child(cap)
 	v.add_child(_btn("← Volver", Color("1f6fd0"), func() -> void: _show("title")))
 
 
 func _pick_topic(i: int) -> void:
-	_learn_text.text = "%s\n\n%s" % [LEARN[i][0], LEARN[i][1]]
+	_learn_token += 1
+	_learn_cur = i
+	var token := _learn_token
 	for j in _learn_buttons.size():
 		var col := Color("1f9f55") if j == i else Color("245aa8")
 		for st in ["normal", "hover", "pressed"]:
 			(_learn_buttons[j] as Button).add_theme_stylebox_override(st, _box(col, col.lightened(0.4), 2, 8))
+	for c in _learn_box.get_children():
+		c.queue_free()
+	var kind: String = LEARN[i][1]
+	_learn_box.add_child(_lbl(LEARN[i][0], 22, C_GOLD, false))
+	_learn_box.add_child(_lbl(LEARN[i][2], 15, C_TEXT, true, 470))
+	var live := VBoxContainer.new()
+	live.add_theme_constant_override("separation", 6)
+	_learn_box.add_child(live)
+	match kind:
+		"moon", "earth": await _topic_image(live, kind, token)
+		"sun": await _topic_sun(live, token)
+		"radiation": await _topic_radiation(live, token)
+		"data": _topic_data(live)
+		_: _topic_ref(live, kind.trim_prefix("ref_"))
+	if token == _learn_token and kind in ["moon", "earth", "sun", "radiation"]:
+		_learn_box.add_child(_btn("↻ Actualizar ahora", Color("1f6fd0"), _refresh_topic, 14, 34))
+
+
+## Vuelve a consultar el tema abierto (como maximo una vez por minuto, para no repetir peticiones).
+func _refresh_topic() -> void:
+	var now := Time.get_ticks_msec()
+	if now - _learn_last_refresh < 60000:
+		return
+	_learn_last_refresh = now
+	NASADataManager.force_stale = true
+	await _pick_topic(_learn_cur)
+	NASADataManager.force_stale = false
+
+
+func _alive(token: int, live: Control) -> bool:
+	return token == _learn_token and is_instance_valid(live)
+
+
+func _source_line(live: Control, source: String, label: String, retrieved: float, origin: String) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	live.add_child(row)
+	row.add_child(UI.badge(label, 12))
+	var when := ("consultado %s" % DatasetManager.format_time(retrieved)) if retrieved > 0 else "sin consulta"
+	row.add_child(_lbl("%s · %s · %s" % [source, when, ORIGIN_TEXT.get(origin, origin)], 12, C_MUTED, true, 330))
+
+
+func _wait_label(live: Control) -> Label:
+	var l := _lbl("⏳ Consultando NASA…", 14, C_MUTED, false)
+	live.add_child(l)
+	return l
+
+
+func _topic_image(live: Control, kind: String, token: int) -> void:
+	var wait := _wait_label(live)
+	var key := "lro_wac" if kind == "moon" else "modis_truecolor"
+	var r: Dictionary = await EarthImageryManager.get_earth(key)
+	if not _alive(token, live):
+		return
+	wait.queue_free()
+	if not r.get("ok", false):
+		live.add_child(_lbl("🖼 No hay imagen ahora (%s). El juego sigue funcionando." % r.get("error", "sin conexión"), 14, Color("ff9d9d"), true, 470))
+		return
+	var tr := TextureRect.new()
+	tr.texture = r["texture"]
+	tr.custom_minimum_size = Vector2(0, 170)
+	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	live.add_child(tr)
+	var what := "Imagen de la Tierra de hoy (MODIS Terra) del %s" % r["image_date"] if kind == "earth" else "Mosaico real de la Luna (LRO WAC), sin una fecha de captura única"
+	live.add_child(_lbl(what, 14, C_TEXT, true, 470))
+	_source_line(live, "NASA GIBS" if kind == "earth" else "NASA LRO · Moon Trek", r["classification"], r["retrieved_at"], "cache_fresh" if r["from_cache"] else "network")
+
+
+func _topic_sun(live: Control, token: int) -> void:
+	var wait := _wait_label(live)
+	var ev: Dictionary = await ScientificDataManager.build_solar_event()
+	var fl_res: Dictionary = await NASADataManager.donki("FLR", 30)
+	var cme_res: Dictionary = await NASADataManager.donki("CME", 30)
+	var cross: Dictionary = await ScientificDataManager.get_geomagnetic_crosscheck([])
+	if not _alive(token, live):
+		return
+	wait.queue_free()
+	var flares := ScientificDataManager.normalize_donki("FLR", fl_res)
+	var cmes := ScientificDataManager.normalize_donki("CME", cme_res)
+	if ev.get("is_fallback", true):
+		live.add_child(_lbl("Sin datos de DONKI ahora ni copia guardada. El juego usa una alerta de práctica.", 14, Color("ffd9a0"), true, 470))
+		_source_line(live, "NASA DONKI", ScientificDataManager.LABEL_SIM, 0.0, "none")
+	else:
+		var rec: Dictionary = ev["record"]
+		live.add_child(_lbl("Lo más fuerte reciente: %s" % NasaBridge_headline(rec), 15, UI.GREEN if ev["classification"] == ScientificDataManager.LABEL_REAL else UI.YELLOW, true, 470))
+		var strong := 0
+		for f in flares:
+			if str(f.get("class_type", "")).begins_with("M") or str(f.get("class_type", "")).begins_with("X"):
+				strong += 1
+		var fastest := 0.0
+		for c in cmes:
+			fastest = maxf(fastest, float(c.get("speed", 0.0)))
+		live.add_child(_lbl("• Llamaradas en 30 días: %d (clase M o X: %d)" % [flares.size(), strong], 15, C_TEXT, true, 470))
+		live.add_child(_lbl("• Nubes de plasma (CME) en 30 días: %d%s" % [cmes.size(), (" · la más rápida ≈ %d km/s" % int(fastest)) if fastest > 0 else ""], 15, C_TEXT, true, 470))
+		_source_line(live, "NASA DONKI", ev["classification"], fl_res.get("retrieved_at", 0.0), fl_res.get("origin", "none"))
+	if cross.get("ok", false):
+		live.add_child(_lbl("• Índice Kp ahora: %.1f (tormenta geomagnética G%s)" % [cross["kp_now"], cross["g_scale"]], 15, C_TEXT, true, 470))
+		_source_line(live, "NOAA SWPC", cross["classification"], cross["retrieved_at"], cross["origin"])
+
+
+## Titulo corto de un registro DONKI normalizado.
+func NasaBridge_headline(rec: Dictionary) -> String:
+	return "%s (%s)" % [rec.get("title", "evento"), Time.get_date_string_from_unix_time(int(rec.get("event_time", 0)))]
+
+
+func _topic_radiation(live: Control, token: int) -> void:
+	var wait := _wait_label(live)
+	var cross: Dictionary = await ScientificDataManager.get_geomagnetic_crosscheck([])
+	var sep_res: Dictionary = await NASADataManager.donki("SEP", 30)
+	if not _alive(token, live):
+		return
+	wait.queue_free()
+	if not cross.get("ok", false):
+		live.add_child(_lbl("Sin datos de NOAA ahora ni copia guardada.", 14, Color("ffd9a0"), true, 470))
+		return
+	var s_scale := str(cross["s_scale"])
+	live.add_child(_lbl("• Tormenta de radiación solar hoy (escala S): S%s" % s_scale, 16, UI.GREEN if s_scale == "0" else UI.RED, true, 470))
+	live.add_child(_lbl("   S0 significa «ninguna». S1 (leve) a S5 (extrema).", 12, C_MUTED, true, 470))
+	live.add_child(_lbl("• Apagones de radio (R): R%s · Tormentas geomagnéticas (G): G%s" % [cross["r_scale"], cross["g_scale"]], 14, C_TEXT, true, 470))
+	var seps := ScientificDataManager.normalize_donki("SEP", sep_res)
+	live.add_child(_lbl("• Eventos de partículas solares (SEP) en 30 días: %d" % seps.size(), 14, C_TEXT, true, 470))
+	_source_line(live, "NOAA SWPC + NASA DONKI", cross["classification"], cross["retrieved_at"], cross["origin"])
+	live.add_child(_lbl("En el juego, la alerta solar del turno 6 sale de DONKI y es un parámetro de simulación, no una dosis real.", 12, C_MUTED, true, 470))
+
+
+func _topic_data(live: Control) -> void:
+	var shown := 0
+	for d in DatasetManager.get_all():
+		if str(d.get("connection", "none")) in ["none", "ref"]:
+			continue
+		shown += 1
+		var ok := str(d["connection"]) == "online"
+		var row := HBoxContainer.new()
+		live.add_child(row)
+		var n := _lbl("%s %s" % ["●", d["name"]], 13, C_TEXT)
+		n.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(n)
+		row.add_child(_lbl("%s · %s" % [("en línea" if ok else "caché"), DatasetManager.format_time(float(d.get("queried_at", 0.0)))], 12, UI.GREEN if ok else UI.YELLOW))
+	if shown == 0:
+		live.add_child(_lbl("Aún no se consultó ninguna fuente en esta sesión. Abre el Space Data Center desde el juego o los temas ☀ 🌍 🌙 ☢.", 14, Color("ffd9a0"), true, 470))
+	live.add_child(_lbl("Etiquetas: DATO REAL · DATO HISTÓRICO · REFERENCIA NASA · PARÁMETRO DE SIMULACIÓN. El detalle está en el Space Data Center.", 12, C_MUTED, true, 470))
+
+
+func _topic_ref(live: Control, key: String) -> void:
+	var d := DatasetManager.get_dataset("ref_" + key)
+	var brow := HBoxContainer.new()
+	brow.add_child(UI.badge(ScientificDataManager.LABEL_REF, 12))
+	live.add_child(brow)
+	live.add_child(_lbl("Es documentación de NASA: no hay una medición en vivo de este tema. " + str(d.get("description", "")), 13, C_MUTED, true, 470))
+	var lk := LinkButton.new()
+	lk.text = "Leer la fuente original de NASA"
+	lk.uri = str(d.get("url_original", ""))
+	lk.add_theme_color_override("font_color", Color("6fb4ff"))
+	live.add_child(lk)
 
 
 func _build_achievements() -> void:
@@ -398,14 +570,14 @@ func _spacer(h: int) -> Control:
 	return c
 
 
-func _lbl(text: String, size: int, col: Color, wrap: bool) -> Label:
+func _lbl(text: String, size: int, col: Color, wrap: bool = false, min_w: int = 300) -> Label:
 	var l := Label.new()
 	l.text = text
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", col)
 	if wrap:
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		l.custom_minimum_size = Vector2(300, 0)
+		l.custom_minimum_size = Vector2(min_w, 0)
 	return l
 
 

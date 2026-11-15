@@ -15,7 +15,7 @@ const SHORT := {"habitat": "Hábitat", "dorms": "Dormir", "common": "Común", "l
 		"backup_energy": "Respaldo", "shelter": "Refugio", "panels": "Paneles", "processing": "Materiales"}
 const INDICATORS := [
 	["vida", "💨", "SOPORTE VITAL"], ["proteccion", "🛡", "PROTECCIÓN"], ["energia", "⚡", "ENERGÍA"], ["alimentos", "🌱", "ALIMENTOS"]]
-const PHASE_NAMES := ["Mañana", "Tarde", "Noche"]
+const PHASE_NAMES := ["inicio del día", "mitad del día", "final del día"]
 
 var s: BaseState
 var plan := {"led": 1, "tasks": []}
@@ -47,6 +47,9 @@ var _moon_note := ""
 var _tip_idx := 0
 var _event_locked := false
 var _simulated := false   # true en las pruebas automaticas: no guarda logros
+var _robot_hop := 0.0
+var _last_tip := ""
+var _info_open := false
 var _moon_done := false
 var _intro_pending := false
 
@@ -81,6 +84,16 @@ func _process(delta: float) -> void:
 	if _earth:
 		_earth.material.set_shader_parameter("rot", _t * 0.01)
 	_map.queue_redraw()
+	# El robot salta cuando cambia su mensaje; el boton de turno late cuando se puede pulsar.
+	if _tip.text != _last_tip:
+		_last_tip = _tip.text
+		_robot_hop = 1.0
+	_robot_hop = maxf(0.0, _robot_hop - delta * 3.0)
+	if not _end_btn.disabled and _modal_root == null:
+		var k := 0.93 + 0.07 * sin(_t * 3.2)
+		_end_btn.modulate = Color(k, k, k)
+	else:
+		_end_btn.modulate = Color.WHITE
 
 
 # ------------------------------------------------------------ DATOS NASA ----
@@ -181,6 +194,9 @@ func _sb(col: Color, r: int = 12, border: Color = Color(0.2, 0.25, 0.35)) -> Sty
 		b.border_color = border
 		b.set_border_width_all(2)
 		b.set_corner_radius_all(r)
+		b.shadow_color = Color(0, 0, 0, 0.38)
+		b.shadow_size = 7
+		b.shadow_offset = Vector2(3, 6)
 		_sbcache[key] = b
 	return _sbcache[key]
 
@@ -255,8 +271,12 @@ func _draw_map() -> void:
 	for id in ModuleDefs.ORDER:
 		var r: Rect2 = ModuleDefs.DEFS[id]["rect"]
 		var dot := r.position + Vector2(r.size.x - 6, 6)
-		m.draw_circle(dot, 8.0, Color(0, 0, 0, 0.55))
-		m.draw_circle(dot, 6.0, UI.light_color(_status_level(id)))
+		var lv := _status_level(id)
+		var pulse_r := 6.0 + (2.5 * (0.5 + 0.5 * sin(_t * 6.0)) if lv == 0 else 0.0)
+		m.draw_circle(dot, pulse_r + 2.0, Color(0, 0, 0, 0.55))
+		m.draw_circle(dot, pulse_r, UI.light_color(lv))
+		if lv == 0:
+			m.draw_circle(dot, pulse_r + 6.0, Color(1.0, 0.3, 0.3, 0.18))
 		if id == hover and id != selected:
 			m.draw_rect(r.grow(5), Color(1, 1, 1, 0.8), false, 2.0)
 	if selected != "":
@@ -278,11 +298,16 @@ func _panel_rect(m: Control, r: Rect2, col: Color) -> void:
 func _pod(m: Control, id: String, col: Color, windows: int, vertical: bool) -> void:
 	var r: Rect2 = ModuleDefs.DEFS[id]["rect"]
 	m.draw_style_box(_sb(col), r)
+	m.draw_rect(Rect2(r.position + Vector2(8, 4), Vector2(r.size.x - 16, 3)), Color(1, 1, 1, 0.5))   # brillo superior
 	for i in windows:
+		var wp: Vector2
 		if vertical:
-			m.draw_rect(Rect2(r.position.x + r.size.x * 0.5 - 4, r.position.y + 12 + i * (r.size.y - 24) / maxf(1.0, windows), 8, 8), Color("ffe9a8"))
+			wp = Vector2(r.position.x + r.size.x * 0.5 - 4, r.position.y + 12 + i * (r.size.y - 24) / maxf(1.0, windows))
 		else:
-			m.draw_rect(Rect2(r.position.x + 12 + i * (r.size.x - 24) / maxf(1.0, windows), r.position.y + 10, 8, 8), Color("ffe9a8"))
+			wp = Vector2(r.position.x + 12 + i * (r.size.x - 24) / maxf(1.0, windows), r.position.y + 10)
+		if not s.is_day():
+			m.draw_circle(wp + Vector2(4, 4), 9.0, Color(1.0, 0.85, 0.4, 0.22))
+		m.draw_rect(Rect2(wp, Vector2(8, 8)), Color("ffe9a8"))
 
 
 func _life_support(m: Control) -> void:
@@ -364,9 +389,11 @@ func _astronauts(m: Control) -> void:
 			var tri := 1.0 - absf(f * 2.0 - 1.0)
 			p = Vector2(250, 385).lerp(Vector2(330, 385), tri) if i == 0 else (Vector2(240, 305).lerp(Vector2(330, 305), tri) if i == 1 else Vector2(520, 392).lerp(Vector2(430, 392), tri))
 			p.y += sin(_t * 6.0 + i) * 1.5
-		m.draw_style_box(_sb(Color("f2f5fa"), 5, Color("9aa5bd")), Rect2(p.x - 5, p.y - 8, 10, 14))
-		m.draw_circle(p + Vector2(0, -12), 6.0, Color("f2f5fa"))
-		m.draw_circle(p + Vector2(0, -12), 4.0, Color("1a2338"))
+		m.draw_style_box(_sb(Color("f2f5fa"), 6, Color("9aa5bd")), Rect2(p.x - 7, p.y - 10, 14, 19))
+		m.draw_rect(Rect2(p.x - 3, p.y - 3, 6, 4), Color("2f6fd6"))
+		m.draw_circle(p + Vector2(0, -15), 8.0, Color("f2f5fa"))
+		m.draw_circle(p + Vector2(0, -15), 5.5, Color("1a2338"))
+		m.draw_circle(p + Vector2(-2, -17), 1.8, Color(0.6, 0.85, 1.0, 0.8))
 
 
 func _map_input(ev: InputEvent) -> void:
@@ -438,11 +465,12 @@ func _refresh_module_panel() -> void:
 	head.add_child(nm)
 	var lvl := _status_level(selected)
 	head.add_child(UI.lbl("●", 26, UI.light_color(lvl)))
-	_module_box.add_child(UI.lbl("Función: " + d["func"], 13, UI.TEXT, true, 250))
-	_module_box.add_child(UI.lbl("Estado: " + _state_text(selected), 13, UI.light_color(lvl), true, 250))
-	_module_box.add_child(UI.lbl(_flow_text(selected), 13, UI.TEXT, true, 250))
-	_module_box.add_child(UI.lbl("Necesita: " + d["needs"], 12, UI.MUTED, true, 250))
-	_module_box.add_child(UI.lbl("Ojo: " + d["conseq"], 12, Color("ffd9a0"), true, 250))
+	_module_box.add_child(UI.lbl(d["func"], 14, UI.TEXT, true, 250))
+	var st := PanelContainer.new()
+	st.add_theme_stylebox_override("panel", UI.box(UI.light_color(lvl).darkened(0.7), UI.light_color(lvl), 2, 8, 5))
+	st.add_child(UI.lbl(_state_text(selected), 13, UI.TEXT, true, 240))
+	_module_box.add_child(st)
+	_module_box.add_child(UI.lbl(_flow_text(selected), 13, Color("ffe08a"), true, 250))
 	# Controles propios de cada modulo
 	if selected == "greenhouse":
 		_led_selector()
@@ -452,6 +480,19 @@ func _refresh_module_panel() -> void:
 		_lab_controls()
 	for tid in d["tasks"]:
 		_module_box.add_child(_task_button(tid))
+	_info_section(d)
+
+
+## Datos extra plegables: mantiene el panel corto para ninos y deja la ciencia a un toque.
+func _info_section(d: Dictionary) -> void:
+	var tg := UI.btn("ℹ Menos información" if _info_open else "ℹ Más información y ciencia NASA", Color("2a3b66"), func() -> void:
+		_info_open = not _info_open
+		_refresh_module_panel(), 12, 32)
+	_module_box.add_child(tg)
+	if not _info_open:
+		return
+	_module_box.add_child(UI.lbl("Necesita: " + d["needs"], 12, UI.MUTED, true, 250))
+	_module_box.add_child(UI.lbl("Ojo: " + d["conseq"], 12, Color("ffd9a0"), true, 250))
 	if d.has("ref"):
 		var rb := PanelContainer.new()
 		rb.add_theme_stylebox_override("panel", UI.box(Color("0c2230"), UI.REF, 2, 8, 6))
@@ -585,7 +626,8 @@ func _refresh_all() -> void:
 	_refresh_budget()
 	_refresh_module_panel()
 	_world.queue_redraw()
-	_night.color.a = 0.0 if s.is_day() else 0.42
+	_night.color.a = 0.0 if s.is_day() else 0.5
+	_map.modulate = Color.WHITE if s.is_day() else Color(0.86, 0.9, 1.0)
 	_title_label.text = "DÍA %d · TURNO %d/%d" % [s.day_number(), mini(s.turn, SimConfig.TURNS), SimConfig.TURNS]
 	_phase_label.text = ("☀ " if s.is_day() else "🌙 ") + PHASE_NAMES[(mini(s.turn, SimConfig.TURNS) - 1) % 3] + (" · luz solar" if s.is_day() else " · sin luz solar")
 
@@ -898,6 +940,12 @@ func _build_ui() -> void:
 	_world.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_world.draw.connect(_draw_world)
 	add_child(_world)
+	# De noche solo se oscurece el terreno: la Tierra y la base (con luces propias) siguen brillando.
+	_night = ColorRect.new()
+	_night.color = Color(0.02, 0.03, 0.12, 0.0)
+	_night.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_night.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_night)
 	# Tierra real en el cielo lunar
 	_earth = ColorRect.new()
 	_earth.position = Vector2(820, 62)
@@ -920,21 +968,14 @@ func _build_ui() -> void:
 	add_child(_map)
 	for id in ModuleDefs.ORDER:
 		var r: Rect2 = ModuleDefs.DEFS[id]["rect"]
-		var l := UI.lbl("%s %s" % [ModuleDefs.DEFS[id]["icon"], SHORT[id]], 11, Color("1b2230"))
-		l.position = r.position + Vector2(2, r.size.y + 1 if r.size.y < 50 else r.size.y - 18)
+		var l := UI.lbl("%s %s" % [ModuleDefs.DEFS[id]["icon"], SHORT[id]], 11, Color("f2f6ff"))
 		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		l.add_theme_stylebox_override("normal", UI.box(Color(0.04, 0.08, 0.2, 0.85), Color(0.35, 0.5, 0.85), 1, 8, 2))
 		if r.size.y >= 50:
-			l.position = Vector2(r.position.x + 3, r.end.y - 17)
+			l.position = Vector2(r.position.x + 2, r.end.y - 21)
 		else:
-			l.position = Vector2(r.position.x - 4, r.end.y + 2)
-		l.add_theme_color_override("font_outline_color", Color(1, 1, 1, 0.85))
-		l.add_theme_constant_override("outline_size", 4)
+			l.position = Vector2(r.position.x - 4, r.end.y + 4)
 		_map.add_child(l)
-	_night = ColorRect.new()
-	_night.color = Color(0.02, 0.03, 0.12, 0.0)
-	_night.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_night.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_night)
 	_build_top()
 	_build_indicators()
 	_build_robot()
@@ -1015,16 +1056,23 @@ func _build_robot() -> void:
 	h.add_theme_constant_override("separation", 8)
 	p.add_child(h)
 	var rb := Control.new()
-	rb.custom_minimum_size = Vector2(54, 70)
+	rb.custom_minimum_size = Vector2(62, 84)
 	rb.draw.connect(func() -> void:
-		var bob := sin(_t * 2.0) * 2.0
-		rb.draw_circle(Vector2(27, 34 + bob), 24.0, Color("eef2f8"))
-		rb.draw_circle(Vector2(27, 34 + bob), 17.0, Color("0c1730"))
-		rb.draw_circle(Vector2(20, 33 + bob), 4.0, Color("5fe0ff"))
-		rb.draw_circle(Vector2(34, 33 + bob), 4.0, Color("5fe0ff"))
-		rb.draw_line(Vector2(27, 10 + bob), Vector2(27, 2 + bob), Color("aab2c4"), 3.0)
-		rb.draw_circle(Vector2(27, 2 + bob), 3.0, Color("ff5d5d"))
-		rb.draw_rect(Rect2(14, 58, 26, 10), Color("5a7bd0")))
+		var bob := sin(_t * 2.0) * 2.0 - _robot_hop * 10.0
+		rb.draw_circle(Vector2(31, 82), 20.0, Color(0, 0, 0, 0.0))
+		# cuerpo, brazos y cabeza
+		rb.draw_style_box(_sb(Color("5a7bd0"), 8, Color("3a56a8")), Rect2(17, 58 + bob, 28, 20))
+		rb.draw_circle(Vector2(31, 62 + bob), 5.0, Color("ffd24d"))
+		rb.draw_circle(Vector2(31, 36 + bob), 27.0, Color("eef2f8"))
+		rb.draw_arc(Vector2(31, 36 + bob), 27.0, 0, TAU, 40, Color("aab6cf"), 3.0)
+		rb.draw_circle(Vector2(31, 37 + bob), 20.0, Color("0c1730"))
+		var blink: bool = fmod(_t, 3.4) > 3.25
+		var ey := 4.0 if not blink else 1.0
+		rb.draw_rect(Rect2(21, 34 + bob - ey * 0.5, 7, ey * 2.0), Color("5fe0ff"))
+		rb.draw_rect(Rect2(35, 34 + bob - ey * 0.5, 7, ey * 2.0), Color("5fe0ff"))
+		rb.draw_arc(Vector2(31, 41 + bob), 6.0, 0.15 * PI, 0.85 * PI, 10, Color("5fe0ff"), 2.0)
+		rb.draw_line(Vector2(31, 9 + bob), Vector2(31, 1 + bob), Color("aab2c4"), 3.0)
+		rb.draw_circle(Vector2(31, 1 + bob), 3.5, Color("ff5d5d") if fmod(_t, 1.0) < 0.5 else Color("ff9d9d")))
 	var tmr := Timer.new()
 	tmr.wait_time = 0.05
 	tmr.autostart = true
