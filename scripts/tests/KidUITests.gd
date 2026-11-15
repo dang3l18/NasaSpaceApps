@@ -17,6 +17,7 @@ func _check(c: bool, msg: String) -> void:
 
 
 func _ready() -> void:
+	Lang.set_language("es", false)   # las pruebas comprueban los textos en espanol
 	NASADataManager.simulate_offline = true
 	print("=== PRUEBAS DE INTERFAZ INFANTIL ===")
 	_test_text_to_icons()
@@ -357,6 +358,7 @@ Una serie de ayudas para cada misión")
 		await get_tree().process_frame
 		g._build_tutorial()
 		g._tutorial.save_path = "user://tutorial_test2.cfg"
+		g._tutorial.seen.clear()   # independiente del progreso real guardado en este equipo
 		g._tutorial.can_show = func() -> bool: return true
 		g._tutorial.notify("start")
 		g._select("greenhouse")

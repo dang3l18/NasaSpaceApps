@@ -169,9 +169,18 @@ func donki_range(kind: String, start_unix: int, end_unix: int, ttl: int, cache_i
 		params["type"] = "all"
 	# Verificado 2026-11-14: /DONKI/FLR en api.nasa.gov responde 404 (incluso para mayo 2024),
 	# pero el servicio original del CCMC si funciona y no requiere clave.
-	if kind == "FLR":
-		return await get_json("DONKI_FLR", DONKI_CCMC_BASE + kind, params, ttl, "", cache_id)
-	return await get_json("DONKI_" + kind, DONKI_BASE + kind, params, ttl, "api_key", cache_id)
+	# Verificado 2026-11-15: el CCMC responde a TODOS los tipos de DONKI (FLR, CME, GST, SEP, WSA-Enlil, notificaciones)
+	# sin clave y con CORS abierto; en cambio api.nasa.gov con la clave de demostracion devuelve 429 casi al instante.
+	# Por eso se usa el CCMC como fuente principal (no hace falta clave ni en la version web) y api.nasa.gov solo
+	# como respaldo cuando la persona ha configurado su propia clave.
+	var res: Dictionary = await get_json("DONKI_" + kind, DONKI_CCMC_BASE + kind, params, ttl, "", cache_id)
+	if bool(res.get("ok", false)) and str(res.get("origin", "")) != "cache_stale":
+		return res
+	if kind != "FLR" and not using_demo_key:
+		var alt: Dictionary = await get_json("DONKI_" + kind, DONKI_BASE + kind, params, ttl, "api_key", cache_id)
+		if bool(alt.get("ok", false)):
+			return alt
+	return res
 
 
 # ------------------------------------------------- EARTHDATA (CMR) ----

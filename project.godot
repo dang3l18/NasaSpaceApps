@@ -18,6 +18,7 @@ config/features=PackedStringArray("4.7", "GL Compatibility")
 [autoload]
 
 FontSetup="*res://scripts/FontSetup.gd"
+Lang="*res://scripts/Lang.gd"
 NASADataManager="*res://scripts/data/NASADataManager.gd"
 DatasetManager="*res://scripts/data/DatasetManager.gd"
 ScientificDataManager="*res://scripts/data/ScientificDataManager.gd"
@@ -30,6 +31,10 @@ AchievementManager="*res://scripts/missions/AchievementManager.gd"
 window/size/viewport_width=1280
 window/size/viewport_height=720
 window/stretch/mode="canvas_items"
+
+[internationalization]
+
+locale/fallback="es"
 
 [rendering]
 

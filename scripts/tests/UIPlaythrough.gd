@@ -8,6 +8,7 @@ var _fail := 0
 
 
 func _ready() -> void:
+	Lang.set_language("es", false)   # las pruebas comprueban los textos en espanol
 	NASADataManager.simulate_offline = true
 	print("=== PARTIDA COMPLETA POR LA INTERFAZ ===")
 	for case in [["equilibrado", "lunar_awakening"], ["pasivo", "lunar_awakening"], ["lava_alterna", "lava_harvest"],

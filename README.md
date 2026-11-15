@@ -1,140 +1,101 @@
 # ZYRANTH — Junior Astronaut: Mission Trainer
 
-Videojuego educativo 2D hecho en **Godot 4.7** (GDScript) para niños de 7 a 12 años, con misiones espaciales basadas en datos abiertos de NASA.
+**An educational 2D space-survival game for kids aged 7–12, built with real NASA open data.**
+Made with Godot 4.7 (GDScript) for the **NASA Space Apps Challenge 2026**. English (default) and Spanish.
 
-## Misiones
+▶ **Play online:** https://nasas-8a24c.web.app  *(runs in the browser, nothing to install)*
+Español: ver [README.es.md](README.es.md) · el juego tiene selector de idioma 🌐 en el menú.
 
-Cada misión es un **dilema de ingeniería**: algo que proteger y algo que sacrificar. Se desbloquean en cadena:
-hay que superar una para abrir la siguiente.
+## What is it?
 
-| # | Misión | Dificultad | Dilema | Estado |
-|---|---|---|---|---|
-| 1 | 🌙 **Refugio Lunar: El Despertar** | ★ Fácil | Cuatro sistemas, un solo presupuesto (tutorial) | Jugable |
-| 2 | ☀️ **Tormenta en el Horizonte** | ★★ Media | Cultivos o escudo: sacrificar energía de las plantas para proteger a la tripulación | Se desbloquea al superar la 1 |
-| 3 | 🔦 **Apagón en el Casquete** | ★★★ Difícil | ¿Qué subsistema apagamos? (hogar, control o luces de cultivo) | Se desbloquea al superar la 2 |
-| 4 | 🔴 Base en Marte | Avanzada | — | En preparación |
+You are the commander of a small base next to the Moon. **Four systems compete for the same budget of energy, materials and crew-hours:**
+life support, protection (shielding), energy and food. Improving one part of the base always costs another. Every mission is an
+**engineering dilemma**: something to protect and something to sacrifice. There is no single "best" answer, and the game
+shows the consequences of each choice before you confirm it.
 
-### Nivel Intermedio (independiente del nivel Fácil; en cadena dentro del nivel)
+The goal is to teach, through play, that **space survival is about trade-offs**, and to connect those trade-offs to **real space weather and
+Earth/Moon observation data from NASA and NOAA**.
 
-| # | Misión | Dificultad | Dilema y mecánica propia | Modificadores |
-|---|---|---|---|---|
-| 1 | 🌋 **La Cosecha de los Tubos de Lava** | ★ Fácil | Luz o energía: alterna luz alta y oscuridad; tras la oscuridad la luz alta da un impulso, dos turnos seguidos estresan a las plantas | consumo +5%, fallos 25% |
-| 2 | 🌑 **Efecto de Sombra Orbital** | ★★ Media | Calor o contacto: noche prolongada; calefacción y transmisión de datos compiten por la batería (hay que enviar 4 paquetes) | consumo +5%, fallos 35% |
-| 3 | 🛡 **Anomalía en el Escudo Térmico** | ★★★ Difícil | Sellar la fisura o cuidar el aire: la soldadura desvía energía del soporte vital y gasta oxígeno de los trajes de EVA antes de la tormenta (DONKI, nivel 3 de escenario educativo) | consumo +10%, fallos 45% |
+## How to play (60 seconds)
 
-Los **fallos** son sucesos de riesgo que solo pueden ocurrir si descuidas un sistema (soporte vital desgastado, poca
-reserva de energía, plantas enfermas o tripulación agotada); cuanto más agresiva la misión, más probables.
-Cada misión comprueba su propia condición de victoria y se marca como «Superada» en el guardado JSON.
+1. Press **PLAY**, choose your age mode (Explorer 7–9 / Commander 10–12) and a mission.
+2. Tap a building on the base: a window shows what it does, how it is doing (✓ ⚠ ✗) and what you can do with it.
+3. Spend your **⚡ energy, 🧱 materials and ⏱ hours** on tasks, then press **End turn**.
+4. When the robot asks, make a decision (cards show what you **gain ▲** and what it **costs ▼**).
+5. Survive 9 turns. **Space alerts** (meteorites, solar flares, leaks…) can appear in real time: you have seconds to decide.
 
-Las misiones viven en `scripts/missions/MissionManager.gd` (una `MissionDef` por misión) y su guion de eventos en
-`scripts/sim/MissionDirector.gd`. El progreso y los logros se guardan en JSON (`user://zyranth_save.json`).
+The robot assistant guides you with short tips and a **step-by-step tutorial for every mission** (repeatable with "❓ Repeat help").
 
-**Logros** (`AchievementManager`): Ingeniero de Campo, Escudo Humano, Agricultor Espacial, Maestro del Trade-off,
-Primera misión superada y Científico de datos.
+## Missions (unlocked in a chain)
 
-## Diseño infantil (7–12 años)
-
-La interfaz comunica con imágenes, iconos y animaciones (aprox. 80 % visual / 20 % texto) **sin quitar mecánicas ni datos
-de NASA**: el detalle sigue a un toque en «💡 ¿Sabías qué?» o con el cursor encima.
-
-- **Sistema de diseño** (`scripts/ui/UI.gd`, `KidKit.gd`, `KidText.gd`): letra redondeada Fredoka, bordes muy redondeados, sombras
-  suaves, botones en relieve que rebotan al pulsar, texto nunca menor de 14 px, estados con **color + símbolo** (✓ ⚠ ✗).
-- **Menú:** logo, astronauta, robot con globo de diálogo, base lunar con rover; botones JUGAR, Continuar y Ajustes.
-- **Misión:** la Luna, la base y la tripulación en discos ilustrados, una frase de objetivo, «proteges / sacrificas» en iconos y
-  3 viñetas de cómo jugar.
-- **Mapa:** 6 medidores grandes (💨 oxígeno, 💧 agua, ⚡ energía, 🍎 comida, 🛡️ protección, 🧱 materiales) con barra verde/amarilla/roja.
-  Al tocar un edificio sale su ventana: ilustración, nombre, estado, una frase, lo que da/gasta en iconos y botones de acción.
-- **Decisiones:** tarjetas ilustradas (máx. 3) con «▲ Ganas» y «▼ Gastas» en iconos, para comparar sin leer.
-- **Robot:** globo de dialogo, cambia la boca si el aire o la energía están en rojo y explica con analogías («los pulmones de la base»).
-
-- **Tutorial progresivo con una serie de ayudas para cada misión** (`scripts/game/TutorialGuide.gd`): el robot enseña cada cosa la primera vez
-  que hace falta, con un anillo que late, una flecha animada y un globo corto («Ayuda 2 de 8»). Cada misión tiene sus pasos propios ligados a
-  su dilema (tormenta: «¡Súbela antes de la tormenta!»; apagón: el Centro de comandos y la reserva; tubos de lava: alternar luz alta y oscuridad;
-  sombra orbital: calefacción o datos; grieta: sellar y los trajes), más los pasos básicos que aún no se hayan visto. No interrumpe ventanas y se
-  repite con «❓ Repetir ayuda» (serie de la misión actual) o desde Ajustes.
-- **Alertas** con una escena animada por evento (`KidArt.gd`), el robot que lo cuenta en una frase, respuestas en tarjetas con iconos y
-  un resultado siempre amable («¡Se acabó el tiempo! Así se aprende.»). Cada alerta trae un dato curioso al terminar.
-- **Resumen de turno** con 4 tarjetas (aire, escudo, energía, comida) y flechas ▲▼; **alerta solar** con astronautas corriendo al refugio y
-  el dato de NASA con su etiqueta honesta (SIMULACIÓN EDUCATIVA / DATO HISTÓRICO).
-- **Pantalla final:** confeti y astronautas saltando si se gana, de 0 a 3 estrellas (`BaseState.stars()`), sistemas que aguantaron,
-  decisiones, logros y «Hoy aprendimos». Si no sale bien: «¡Buen intento, comandante!» y una pista de qué mejorar, sin castigo.
-
-## Alertas espaciales en tiempo real
-
-Durante cualquier misión pueden sonar **alertas de emergencia** a pantalla grande, con animación, cuenta regresiva
-(«IMPACTO EN 19 s») y tres respuestas. Todas tienen ventajas y desventajas con efectos reales (energía, materiales,
-radiación, aire, salud, paneles solares, horas de trabajo y puntuación). Si se acaba el tiempo se aplica la consecuencia
-por no responder. Teclas **1, 2, 3** eligen la opción. Los eventos son **SIMULACIÓN EDUCATIVA**; cada uno trae un «dato curioso».
-
-| Evento | Peligro | Qué pasa |
+| Level | Mission | Dilemma |
 |---|---|---|
-| 🌡️ Temperatura extrema · 🌑 Eclipse (paneles sin luz) | 1 | Regular el calor / gestionar la energía sin Sol |
-| 🔋 Fallo energético · ☄️ Meteorito cerca · ☀️ Llamarada solar | 2 | Priorizar sistemas, escudos o refugio |
-| ⚠️ Fuga de oxígeno · 🌠 Lluvia de meteoros | 3 | Reparar rápido o aislar el módulo |
-| 🌪️ Tormenta de polvo marciana | 2 | Solo en misiones de Marte (todavía en preparación) |
+| Easy | Lunar Shelter: The Awakening | Four systems, one budget (tutorial) |
+| Easy | Storm on the Horizon | Crops or shield: sacrifice the plants' energy to protect the crew |
+| Easy | Blackout at the Polar Cap | Which subsystem do we switch off? |
+| Intermediate | The Lava Tube Harvest | Light or energy: alternate high light and darkness |
+| Intermediate | Orbital Shadow Effect | Warmth or contact: heating vs. sending data to Earth |
+| Intermediate | Thermal Shield Anomaly | Seal the crack or look after the air before the storm |
+| Advanced | Mars base | *in preparation* |
 
-Aparecen con **intervalos variables**, **30 s de espera mínima** entre alertas, un máximo por misión (2–4 según la
-dificultad), más probabilidad y menos tiempo en las misiones difíciles, y eventos más peligrosos al avanzar los turnos.
-No salen en el turno de la tormenta solar ni en el último, y se detienen al terminar o abandonar la misión. El modo 7–9 años
-da más tiempo, menos alertas y pérdidas un 25% menores. Código: `scripts/sim/SpaceEvents.gd` (catálogo y consecuencias),
-`AlertDirector.gd` (cuándo y cuál) y `scripts/game/AlertOverlay.gd` (pantalla).
+Progress, achievements and stars are saved as JSON in the browser/computer. Each mission checks its own win and lose conditions.
 
-## Operación: Refugio Lunar (simulación común)
+## Real NASA data — and how we label it honestly
 
-Gestionas una **base lunar**
-durante 3 días (9 turnos) y aprendes que sobrevivir en la Luna exige **equilibrar cuatro sistemas** que compiten por
-los mismos recursos.
+Every piece of information shows where it comes from. **We never invent data and never present a solar-event class as a real radiation dose.**
 
-## Los cuatro sistemas (interdependientes)
-
-| Sistema | Qué hace | Qué consume |
+| Source | Label | What it does in the game |
 |---|---|---|
-| 💨 Soporte vital | Oxígeno, CO₂ y agua | Energía, mantenimiento, repuestos |
-| 🛡 Protección | Blindaje con regolito y refugio contra radiación | Materiales, horas, energía en alertas |
-| ⚡ Energía | Paneles (solo de día), baterías y respaldo | — (de noche solo gasta) |
-| 🌱 Alimentos | Invernadero; también aporta algo de aire y agua | Energía (LED), agua, nutrientes, cuidados |
+| NASA DONKI (CCMC) — flares, CMEs, geomagnetic storms, SEP, WSA-Enlil, notifications | REAL / HISTORICAL DATA | The latest strong solar event sets the **alert level** of the solar-storm turn (a *simulation parameter*) |
+| NASA GIBS — MODIS/VIIRS Earth imagery, Black Marble | REAL / HISTORICAL DATA | The real Earth in the sky and in "Learn more" |
+| NASA LRO · Moon Trek — global WAC mosaic | HISTORICAL DATA | The real Moon behind the base |
+| NASA Earthdata CMR — ISS lightning sensor (LIS) | HISTORICAL DATA | Context in the Space Data Center |
+| NOAA SWPC — planetary Kp index, space-weather scales | REAL DATA | Cross-check of DONKI's geomagnetic activity |
+| NASA ECLSS, Radiation Protection, Moon Base Systems, Veggie | NASA REFERENCE | Explain what each building does, with a link to the source |
+| Game numbers (`SimConfig.gd`) | SIMULATION PARAMETER | Energy, materials, hours, exposure: game values, **not measurements** |
 
-Comparten tres presupuestos por turno: **⚡ energía, 🧱 materiales y ⏱ horas de la tripulación**. Cada decisión tiene un
-coste inmediato y consecuencias en turnos posteriores. Ninguna estrategia "maximizar una sola cosa" gana.
-Las 14 instalaciones de la base (hábitat, dormitorios, área común, laboratorio, soporte vital, invernadero,
-fertilización, enfermería, comandos, energía principal y de respaldo, refugio, paneles y procesamiento de materiales)
-son interactivas.
+Without internet the game keeps working with the last saved copy; without a copy it uses a clearly labeled **EDUCATIONAL SIMULATION** scenario.
+DONKI is queried through NASA's CCMC service, which needs **no API key**.
 
-## Datos de NASA y cómo influyen en la misión
+## Features
 
-| Fuente | Tipo de dato | Efecto en el juego |
-|---|---|---|
-| NASA DONKI | **Real / histórico** | Su evento solar elige el *nivel de alerta* (1–3) del turno 6. Es un parámetro de simulación, **no una dosis real** |
-| NASA LRO · Moon Trek (WMTS) | **Histórico** (mosaico) | Imagen real de la Luna en la presentación de la misión |
-| NASA GIBS | **Real** | La Tierra visible en el cielo lunar |
-| NASA Earthdata CMR, NOAA SWPC | Histórico / real | Contexto y contraste en el Space Data Center |
-| NASA ECLSS, Radiation Protection, Moon Base Systems, Veggie, LRO/PDS | **Referencia NASA** | Explican las mecánicas de cada módulo, con enlace a la fuente |
-| Parámetros del juego (`SimConfig.gd`) | **Parámetro de simulación** | Cifras de energía, materiales, horas y exposición: valores de juego, no mediciones |
+- 14 interactive modules, 4 interdependent systems, shared budgets of energy / materials / hours.
+- Real-time **space alerts** with countdown, illustrated scenes and real consequences (energy, air, radiation, health, panels, score).
+- **Child-friendly UX**: rounded font, big icons instead of numbers, 3-state meters (✓ ⚠ ✗ — never colour alone), illustrated decision cards, positive messages when you lose.
+- Adaptive robot guide that reads your decisions and a per-mission progressive tutorial.
+- **Space Data Center**: see the real datasets behind the game (charts, images, status, attribution).
+- Runs on desktop and **in the browser (WebAssembly)**; works offline with a cache.
+- Fully bilingual (English / Español) with a runtime language switch.
 
-El juego nunca afirma que la base sea una instalación real de NASA ni que haya agua accesible en el sitio. Sin
-conexión y sin caché, la alerta solar pasa a un escenario rotulado como **SIMULACIÓN EDUCATIVA**.
+## Run locally
 
-## Ejecutar
+Open the folder with **Godot 4.7** and press *Play*. No key is needed. (Optional: your own NASA key in `NASA_API_KEY`,
+`user://nasa_config.cfg` or `config/nasa_config.local.cfg` — git-ignored — is only used as a fallback for DONKI.)
 
-1. Abre la carpeta en Godot 4.7 y pulsa *Play*.
-2. Para DONKI necesitas una clave gratuita de <https://api.nasa.gov>. **No la subas al repositorio**:
-   variable de entorno `NASA_API_KEY`, o `user://nasa_config.cfg`, o `config/nasa_config.local.cfg`
-   (ignorado por git; plantilla en `config/nasa_config.example.cfg`).
+Web build: export with the "Web" preset and serve the folder over HTTP (e.g. `python -m http.server`); opening `index.html` with a double click does not work in browsers.
 
-## Pruebas
+## Tests
 
 ```
-godot --headless --path . res://scenes/SimTests.tscn        # equilibrio de los 4 sistemas (sin red)
-godot --headless --path . res://scenes/MissionTests.tscn    # misiones, desbloqueo, logros y guardado JSON (sin red)
-godot --headless --path . res://scenes/UIPlaythrough.tscn   # misión completa por la interfaz (sin red)
-godot --headless --path . res://scenes/UILayoutTests.tscn   # interfaz movible y ocultable (sin red)
-godot --headless --path . res://scenes/AlertTests.tscn      # alertas espaciales: eventos, consecuencias, generación y pantalla (sin red)
-godot --headless --path . res://scenes/KidUITests.tscn      # interfaz infantil: iconos, tarjetas, medidores y textos legibles (sin red)
-godot --headless --path . res://scenes/ConnectionTests.tscn # conexión, caché y modo sin conexión (red real)
+godot --headless --path . res://scenes/SimTests.tscn        # balance of the 4 systems
+godot --headless --path . res://scenes/MissionTests.tscn    # missions, unlocking, achievements, JSON save
+godot --headless --path . res://scenes/UIPlaythrough.tscn   # a whole mission played through the real UI
+godot --headless --path . res://scenes/AlertTests.tscn      # space alerts
+godot --headless --path . res://scenes/KidUITests.tscn      # child-friendly UI, tutorial series, results
+godot --headless --path . res://scenes/UILayoutTests.tscn   # movable / hideable panels
+godot --headless --path . res://scenes/LangTests.tscn       # English build contains no Spanish text (1,300+ strings)
+godot --headless --path . res://scenes/ConnectionTests.tscn # network, cache and offline mode (real network)
 ```
+(All tests except `LangTests` run in Spanish, the source language of the strings.)
 
-## Atribuciones
+## Architecture
 
-Datos: NASA / GSFC / CCMC (DONKI), NASA EOSDIS GIBS, NASA LRO · Moon Trek, NASA EOSDIS / GHRC DAAC, NOAA SWPC.
-Fuentes incluidas (para que los iconos se vean también en la versión web): Fredoka (SIL OFL 1.1), Twemoji · Mozilla COLR (CC-BY 4.0) y DejaVu Sans (licencia libre Bitstream Vera), en `assets/fonts/` y cargadas por `scripts/FontSetup.gd`.
-Este proyecto no es un producto oficial de NASA ni está respaldado por NASA.
+`scripts/sim` (pure logic: `BaseState`, `SpaceEvents`, `AlertDirector`, `MissionDirector`, `GuideCoach`) · `scripts/data` (HTTP + cache + dataset registry) ·
+`scripts/missions` (definitions, save, achievements) · `scripts/game` (main scene, alert overlay, tutorial) · `scripts/ui` (design system `UI`/`KidKit`/`KidText`/`KidArt`, menu) ·
+`scripts/Lang.gd` (language: translates every label at display time from `data/lang_en.json`).
+
+## Credits and attributions
+
+Data: NASA / GSFC / CCMC (DONKI), NASA EOSDIS GIBS, NASA LRO · Moon Trek, NASA EOSDIS / GHRC DAAC, NOAA SWPC.
+Fonts: Fredoka (SIL OFL 1.1), Twemoji · Mozilla COLR (CC-BY 4.0), DejaVu Sans (Bitstream Vera licence).
+This project is not an official NASA product and is not endorsed by NASA.

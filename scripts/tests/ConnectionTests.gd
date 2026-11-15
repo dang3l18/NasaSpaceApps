@@ -8,6 +8,7 @@ var _fail := 0
 
 
 func _ready() -> void:
+	Lang.set_language("es", false)   # las pruebas comprueban los textos en espanol
 	print("=== FASE H: pruebas de conexion, cache y offline ===")
 	var key_backup := NASADataManager.api_key
 	await _t1_cold_online()
@@ -141,6 +142,8 @@ func _t5_rate_limit_backoff() -> void:
 	print("\nT5: limite de la API (429) -> respeta el backoff")
 	_clear_cache()
 	_reset()
+	# DONKI se pide al CCMC (sin clave); api.nasa.gov es solo el respaldo con clave propia: ambos en espera
+	NASADataManager._backoff_until["ccmc.gsfc.nasa.gov"] = Time.get_unix_time_from_system() + 600.0
 	NASADataManager._backoff_until["api.nasa.gov"] = Time.get_unix_time_from_system() + 600.0
 	var n0 := NASADataManager.request_count
 	var r: Dictionary = await NASADataManager.donki("CME", 30)
@@ -162,17 +165,21 @@ func _t6_dedupe_inflight() -> void:
 
 
 func _t7_bad_key_falls_back_to_cache(real_key: String) -> void:
-	print("\nT7: clave invalida -> error controlado y respaldo en cache")
+	print("
+T7: clave invalida (api.nasa.gov) -> error controlado y respaldo en cache")
 	_clear_cache()
 	_reset()
+	var now := int(Time.get_unix_time_from_system())
+	var params := {"startDate": Time.get_date_string_from_unix_time(now - 5 * 86400), "endDate": Time.get_date_string_from_unix_time(now)}
+	var url: String = NASADataManager.DONKI_BASE + "CME"
 	NASADataManager.api_key = "clave_invalida_de_prueba"
-	var bad: Dictionary = await NASADataManager.donki("CME", 30)
+	var bad: Dictionary = await NASADataManager.get_json("DONKI_CME", url, params, 3600, "api_key", "t7_keytest")
 	_check(not bad.ok, "sin cache y con clave invalida: ok=false, codigo %d" % bad.code)
 	NASADataManager.api_key = real_key
-	await NASADataManager.donki("CME", 30)   # llena la cache con la clave buena
+	await NASADataManager.get_json("DONKI_CME", url, params, 3600, "api_key", "t7_keytest")   # llena la cache con la clave buena
 	_age_cache()
 	NASADataManager.api_key = "clave_invalida_de_prueba"
 	_reset(false, true)
-	var fb: Dictionary = await NASADataManager.donki("CME", 30)
+	var fb: Dictionary = await NASADataManager.get_json("DONKI_CME", url, params, 3600, "api_key", "t7_keytest")
 	_check(fb.ok and fb.origin == "cache_stale", "con cache previa, la clave invalida cae a cache (origen %s)" % fb.origin)
 	NASADataManager.api_key = real_key

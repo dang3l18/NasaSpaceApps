@@ -21,7 +21,7 @@ func _ready() -> void:
 
 
 func _load_registry() -> void:
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(REGISTRY_PATH))
+	var parsed: Variant = Lang._read_json(REGISTRY_PATH)   # funciona tambien en el juego exportado (web)
 	if parsed is Dictionary:
 		_datasets = parsed.get("datasets", [])
 	else:

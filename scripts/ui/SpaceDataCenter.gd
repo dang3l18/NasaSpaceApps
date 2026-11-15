@@ -197,7 +197,7 @@ func _show_preview(id: String) -> void:
 
 
 func _txt(c: Control, text: String, pos: Vector2, size: int, col: Color) -> void:
-	c.draw_string(ThemeDB.fallback_font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
+	c.draw_string(ThemeDB.fallback_font, pos, Lang.t(text), HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
 
 
 func _draw_monthly(c: Control, kind: String) -> void:

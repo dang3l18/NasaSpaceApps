@@ -1,6 +1,5 @@
 .godot/
 *.translation
-export_presets.cfg
 # Claves locales: NUNCA al repositorio
 config/nasa_config.local.cfg
 .env
@@ -8,3 +7,5 @@ config/nasa_config.local.cfg
 # Exportaciones y capturas locales (no van al repositorio)
 build/
 capturas/
+.firebase/
+.github/workflows/firebase-*

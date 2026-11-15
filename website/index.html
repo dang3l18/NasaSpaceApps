@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZYRANTH · Junior Astronaut: Mission Trainer</title>
+<meta name="description" content="ZYRANTH is an educational space-survival game for kids 7–12 built on real NASA and NOAA open data. Four systems, one budget, no perfect answer. NASA Space Apps Challenge 2026.">
+<meta property="og:title" content="ZYRANTH · Junior Astronaut: Mission Trainer">
+<meta property="og:description" content="Run a base next to the Moon. Four systems, one budget, no perfect answer — with real NASA data.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="assets/img/title.jpg">
+<meta name="theme-color" content="#070b2a">
+<link rel="icon" href="assets/icon.png">
+<style>
+@font-face { font-family: "Fredoka"; src: url("assets/Fredoka.ttf") format("truetype"); font-weight: 300 700; font-display: swap; }
+:root {
+  --bg: #070b2a; --bg2: #0d1448; --panel: #1b2a72; --panel2: #22348a; --line: #6db6ff;
+  --gold: #ffd24d; --green: #3ddc84; --orange: #ffa51f; --red: #ff6b6b; --text: #f6f9ff; --muted: #c0d0f2;
+  --radius: 22px; --shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; color: var(--text); font-family: "Fredoka", "Segoe UI", system-ui, sans-serif; font-weight: 500; font-size: 18px; line-height: 1.55;
+  background: radial-gradient(1200px 600px at 80% -10%, #1d2f8a 0%, transparent 60%), linear-gradient(180deg, var(--bg) 0%, var(--bg2) 60%, var(--bg) 100%);
+  background-attachment: fixed;
+}
+body::before { /* estrellas */
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .8;
+  background-image:
+    radial-gradient(1.6px 1.6px at 12% 18%, #fff 50%, transparent 51%), radial-gradient(1.2px 1.2px at 27% 62%, #fff 50%, transparent 51%),
+    radial-gradient(1.8px 1.8px at 41% 11%, #fff 50%, transparent 51%), radial-gradient(1.2px 1.2px at 56% 77%, #fff 50%, transparent 51%),
+    radial-gradient(1.6px 1.6px at 71% 33%, #fff 50%, transparent 51%), radial-gradient(1.2px 1.2px at 83% 86%, #fff 50%, transparent 51%),
+    radial-gradient(1.8px 1.8px at 92% 52%, #fff 50%, transparent 51%), radial-gradient(1.2px 1.2px at 6% 91%, #fff 50%, transparent 51%),
+    radial-gradient(1.4px 1.4px at 64% 5%, #fff 50%, transparent 51%), radial-gradient(1.4px 1.4px at 34% 44%, #fff 50%, transparent 51%);
+  background-size: 700px 700px;
+}
+a { color: var(--line); }
+img { max-width: 100%; height: auto; display: block; }
+.wrap { position: relative; z-index: 1; max-width: 1120px; margin: 0 auto; padding: 0 22px; }
+h1, h2, h3 { font-weight: 700; line-height: 1.15; margin: 0 0 .5em; }
+h2 { font-size: clamp(30px, 4.2vw, 44px); color: var(--gold); text-align: center; }
+h3 { font-size: 22px; }
+p { margin: 0 0 1em; }
+.lead { font-size: 20px; color: var(--muted); text-align: center; max-width: 760px; margin: 0 auto 36px; }
+section { position: relative; z-index: 1; padding: 70px 0 10px; scroll-margin-top: 70px; }
+
+/* barra superior */
+header.top { position: sticky; top: 0; z-index: 20; background: rgba(7, 11, 42, .86); backdrop-filter: blur(10px); border-bottom: 2px solid rgba(109,182,255,.25); }
+header.top .wrap { display: flex; align-items: center; gap: 18px; height: 62px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 22px; color: var(--gold); text-decoration: none; letter-spacing: .5px; }
+.brand img { width: 34px; height: 34px; border-radius: 8px; }
+nav { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+nav a { color: var(--text); text-decoration: none; padding: 8px 12px; border-radius: 12px; font-size: 16px; }
+nav a:hover, nav a:focus-visible { background: rgba(109,182,255,.18); }
+.lang { display: flex; gap: 4px; margin-left: 6px; }
+.lang button { font: inherit; font-size: 15px; color: var(--text); background: #34456b; border: 0; padding: 7px 12px; border-radius: 12px; cursor: pointer; }
+.lang button[aria-pressed="true"] { background: var(--green); color: #07240f; font-weight: 700; }
+@media (max-width: 860px) { nav a.hide-s { display: none; } }
+@media (max-width: 640px) { nav a { display: none; } header.top .wrap { height: 56px; } .brand { font-size: 20px; } .btn.play { font-size: 22px; padding: 16px 26px; } section { padding-top: 54px; } }
+
+/* botones */
+.btn { display: inline-flex; align-items: center; gap: 10px; font: inherit; font-weight: 700; font-size: 20px; text-decoration: none; cursor: pointer; border: 0;
+  padding: 14px 26px; border-radius: 18px; color: #fff; box-shadow: 0 6px 0 rgba(0,0,0,.28), var(--shadow); transition: transform .12s, box-shadow .12s; }
+.btn:hover { transform: translateY(-2px); }
+.btn:active { transform: translateY(3px); box-shadow: 0 2px 0 rgba(0,0,0,.28); }
+.btn.play { background: var(--orange); font-size: 26px; padding: 18px 36px; color: #2b1700; }
+.btn.alt { background: #3b6fe0; }
+.btn.ghost { background: transparent; border: 3px solid var(--line); box-shadow: none; }
+:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
+
+/* hero */
+.hero { padding: 46px 0 20px; }
+.hero .grid { display: grid; grid-template-columns: 1.05fr 1fr; gap: 40px; align-items: center; }
+.eyebrow { display: inline-block; background: rgba(61,220,132,.16); color: var(--green); border: 2px solid var(--green); border-radius: 999px; padding: 4px 14px; font-size: 15px; margin-bottom: 16px; }
+.hero h1 { font-size: clamp(46px, 8vw, 92px); color: var(--gold); margin: 0; text-shadow: 0 5px 0 #1b3fa8, 0 10px 30px rgba(0,0,0,.4); letter-spacing: 1px; }
+.hero .sub { font-size: 22px; margin: 6px 0 14px; color: #fff; }
+.hero p.tag { font-size: 20px; color: var(--muted); }
+.cta { display: flex; flex-wrap: wrap; gap: 16px; margin: 26px 0 22px; }
+.chips { display: flex; flex-wrap: wrap; gap: 10px; }
+.chip { background: rgba(255,255,255,.08); border: 2px solid rgba(109,182,255,.4); border-radius: 999px; padding: 5px 14px; font-size: 15px; }
+.shot { border-radius: var(--radius); overflow: hidden; border: 4px solid var(--line); box-shadow: var(--shadow), 0 0 60px rgba(109,182,255,.25); background: #000; }
+.hero .shot { transform: rotate(1.4deg); }
+@media (max-width: 900px) { .hero .grid { grid-template-columns: 1fr; } .hero .shot { transform: none; } }
+
+/* tarjetas */
+.cards { display: grid; gap: 22px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.card { background: linear-gradient(180deg, var(--panel2), var(--panel)); border: 3px solid var(--line); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); }
+.card .ico { font-size: 44px; display: block; margin-bottom: 8px; }
+.card p { color: var(--muted); margin: 0; font-size: 17px; }
+.cards.four { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 900px) { .cards.four { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px) { .cards.four { grid-template-columns: 1fr; } }
+.sys { text-align: center; }
+.sys .ico { width: 78px; height: 78px; margin: 0 auto 10px; display: grid; place-items: center; border-radius: 50%; font-size: 40px; border: 3px solid rgba(255,255,255,.4); }
+.budget { text-align: center; margin: 26px 0 0; font-size: 22px; color: var(--gold); }
+
+/* misiones */
+.missions { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); }
+.mission { display: grid; grid-template-columns: 64px 1fr; gap: 14px; align-items: start; background: var(--panel); border: 3px solid rgba(109,182,255,.5); border-radius: 20px; padding: 18px; }
+.mission .ico { font-size: 38px; width: 64px; height: 64px; display: grid; place-items: center; border-radius: 50%; background: #3b6fe0; }
+.mission h3 { font-size: 20px; margin: 0 0 2px; }
+.mission .lvl { font-size: 14px; color: var(--green); }
+.mission .lvl.m { color: var(--gold); } .mission .lvl.h { color: var(--red); }
+.mission p { margin: 4px 0 0; color: var(--muted); font-size: 16px; }
+.mission.soon { opacity: .75; border-style: dashed; }
+
+/* datos */
+.tablewrap { overflow-x: auto; border-radius: var(--radius); border: 3px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 16px; }
+th, td { padding: 13px 16px; text-align: left; vertical-align: top; border-bottom: 2px solid rgba(109,182,255,.18); }
+th { background: rgba(0,0,0,.25); color: var(--gold); font-size: 15px; letter-spacing: .4px; text-transform: uppercase; }
+tr:last-child td { border-bottom: 0; }
+.pill { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 700; border: 2px solid; white-space: nowrap; margin: 1px 0; }
+.p-real { color: var(--green); border-color: var(--green); background: rgba(61,220,132,.12); }
+.p-hist { color: var(--gold); border-color: var(--gold); background: rgba(255,210,77,.12); }
+.p-ref { color: #5fd0ff; border-color: #5fd0ff; background: rgba(95,208,255,.12); }
+.p-sim { color: #c39bff; border-color: #c39bff; background: rgba(195,155,255,.12); }
+.note { margin-top: 18px; text-align: center; color: var(--muted); font-size: 17px; }
+.note strong { color: var(--text); }
+
+/* galeria */
+.gallery { display: grid; gap: 22px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.gallery figure { margin: 0; }
+.gallery button { all: unset; display: block; cursor: zoom-in; width: 100%; }
+.gallery button:focus-visible .shot { outline: 3px solid var(--gold); outline-offset: 3px; }
+.gallery .shot { transition: transform .15s; }
+.gallery button:hover .shot { transform: scale(1.02); }
+.gallery figcaption { margin-top: 10px; text-align: center; color: var(--muted); font-size: 16px; }
+dialog { border: 4px solid var(--line); border-radius: 22px; padding: 0; max-width: min(1200px, 94vw); background: #000; }
+dialog::backdrop { background: rgba(0,0,10,.85); }
+dialog img { width: 100%; }
+dialog form { position: absolute; top: 10px; right: 10px; }
+dialog form button { font: inherit; font-weight: 700; font-size: 20px; background: var(--orange); border: 0; border-radius: 14px; padding: 8px 16px; cursor: pointer; }
+
+/* presentacion */
+.pres { background: linear-gradient(180deg, var(--panel2), var(--panel)); border: 3px solid var(--line); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow); }
+.frame { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; background: #000; border: 3px solid rgba(255,255,255,.2); }
+.frame iframe, .frame object { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.pres .actions { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-top: 18px; }
+.pres + .pres { margin-top: 24px; }
+.soon-box { text-align: center; padding: 50px 20px; color: var(--muted); }
+.soon-box .big { font-size: 56px; display: block; }
+
+/* equipo + creditos */
+.team { display: flex; flex-wrap: wrap; gap: 18px; justify-content: center; }
+.member { text-align: center; background: var(--panel); border: 3px solid rgba(109,182,255,.5); border-radius: 20px; padding: 18px 26px; min-width: 180px; }
+.member .av { width: 64px; height: 64px; margin: 0 auto 8px; border-radius: 50%; background: #3b6fe0; display: grid; place-items: center; font-size: 32px; }
+.member b { display: block; font-size: 19px; } .member span { color: var(--muted); font-size: 15px; }
+.credits { color: var(--muted); font-size: 16px; text-align: center; max-width: 820px; margin: 0 auto; }
+footer { position: relative; z-index: 1; margin-top: 70px; padding: 30px 0 40px; text-align: center; color: var(--muted); font-size: 15px; border-top: 2px solid rgba(109,182,255,.2); }
+.ctafinal { text-align: center; padding: 40px 0 10px; }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="assets/icon.png" alt=""> ZYRANTH</a>
+    <nav aria-label="Main">
+      <a href="#idea" class="hide-s" data-i18n="nav_idea">The idea</a>
+      <a href="#data" class="hide-s" data-i18n="nav_data">NASA data</a>
+      <a href="#gameplay" class="hide-s" data-i18n="nav_play">Gameplay</a>
+      <a href="#presentation" data-i18n="nav_pres">Presentation</a>
+      <a href="#team" class="hide-s" data-i18n="nav_team">Team</a>
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" data-lang="en" aria-pressed="true">EN</button>
+        <button type="button" data-lang="es" aria-pressed="false">ES</button>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+<div class="wrap">
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="grid">
+      <div>
+        <span class="eyebrow" data-i18n="eyebrow">🚀 NASA Space Apps Challenge 2026</span>
+        <h1>ZYRANTH</h1>
+        <div class="sub">Junior Astronaut · Mission Trainer</div>
+        <p class="tag" data-i18n="tagline">Run a base next to the Moon. Four systems, one budget, no perfect answer. An educational space-survival game for kids 7–12, built on real NASA and NOAA open data.</p>
+        <div class="cta">
+          <a class="btn play" data-game href="https://nasas-8a24c.web.app" target="_blank" rel="noopener"><span aria-hidden="true">▶</span> <span data-i18n="play">Play now</span></a>
+          <a class="btn alt" href="#presentation"><span aria-hidden="true">🎬</span> <span data-i18n="watch">Watch the presentation</span></a>
+        </div>
+        <div class="chips">
+          <span class="chip" data-i18n="chip1">👧 Ages 7–12</span>
+          <span class="chip" data-i18n="chip2">🌐 English · Español</span>
+          <span class="chip" data-i18n="chip3">🖥 Plays in your browser</span>
+          <span class="chip" data-i18n="chip4">🛰 Real NASA data</span>
+        </div>
+      </div>
+      <a class="shot" data-game href="https://nasas-8a24c.web.app" target="_blank" rel="noopener" aria-label="Open the game"><img src="assets/img/title.jpg" width="1280" height="720" alt="ZYRANTH title screen: an astronaut, a friendly robot and a lunar base next to the Earth"></a>
+    </div>
+  </div>
+
+  <!-- IDEA -->
+  <section id="idea">
+    <h2 data-i18n="idea_h">Space survival is all about trade-offs</h2>
+    <p class="lead" data-i18n="idea_lead">On a real mission every improvement costs something else. ZYRANTH lets kids feel that: each mission is an engineering dilemma — something to protect, something to sacrifice.</p>
+    <div class="cards">
+      <div class="card"><span class="ico">⚖️</span><h3 data-i18n="c1_h">No perfect answer</h3><p data-i18n="c1_p">Every choice shows what you gain ▲ and what it costs ▼ before you confirm. Kids compare, decide and see the consequences — and losing is always a positive, “here’s what to improve” moment.</p></div>
+      <div class="card"><span class="ico">🧒</span><h3 data-i18n="c2_h">Made for 7–12 year olds</h3><p data-i18n="c2_p">Big icons instead of numbers, three-state meters (✓ ⚠ ✗ — never colour alone), a rounded font, a friendly robot guide and a step-by-step tutorial for every mission.</p></div>
+      <div class="card"><span class="ico">🛰️</span><h3 data-i18n="c3_h">Real data, honest labels</h3><p data-i18n="c3_p">Solar flares, geomagnetic storms and satellite imagery come from NASA and NOAA. Everything is labeled as real, historical, reference or simulation — we never invent data.</p></div>
+    </div>
+  </section>
+
+  <!-- SISTEMAS -->
+  <section id="systems">
+    <h2 data-i18n="sys_h">Four systems, one budget</h2>
+    <p class="lead" data-i18n="sys_lead">They are connected: improving one always takes energy, materials or crew time from another.</p>
+    <div class="cards four">
+      <div class="card sys"><div class="ico" style="background:#2d79b8">💨</div><h3 data-i18n="s1_h">Life support</h3><p data-i18n="s1_p">Oxygen, CO₂ and water. Uses energy and needs maintenance.</p></div>
+      <div class="card sys"><div class="ico" style="background:#2c9b5b">🛡️</div><h3 data-i18n="s2_h">Protection</h3><p data-i18n="s2_p">Shielding and a radiation shelter. Uses materials and hours.</p></div>
+      <div class="card sys"><div class="ico" style="background:#b8860b">⚡</div><h3 data-i18n="s3_h">Energy</h3><p data-i18n="s3_p">Solar panels (day only), batteries and a backup reserve.</p></div>
+      <div class="card sys"><div class="ico" style="background:#b8473a">🍎</div><h3 data-i18n="s4_h">Food</h3><p data-i18n="s4_p">A greenhouse that also helps with air and water. Uses LED light and care.</p></div>
+    </div>
+    <p class="budget" data-i18n="budget">They all compete for ⚡ energy · 🧱 materials · ⏱ crew hours</p>
+  </section>
+
+  <!-- MISIONES -->
+  <section id="missions">
+    <h2 data-i18n="mis_h">Six missions, six dilemmas</h2>
+    <p class="lead" data-i18n="mis_lead">Missions unlock in a chain. Each has its own rules, risks and tutorial.</p>
+    <div class="missions">
+      <div class="mission"><div class="ico">🌙</div><div><h3 data-i18n="m1_h">Lunar Shelter: The Awakening</h3><div class="lvl" data-i18n="lvl_e">★ Easy</div><p data-i18n="m1_p">Four systems, one budget. The tutorial mission.</p></div></div>
+      <div class="mission"><div class="ico">☀️</div><div><h3 data-i18n="m2_h">Storm on the Horizon</h3><div class="lvl m" data-i18n="lvl_m">★★ Medium</div><p data-i18n="m2_p">Crops or shield: sacrifice the plants’ energy to protect the crew.</p></div></div>
+      <div class="mission"><div class="ico">🔦</div><div><h3 data-i18n="m3_h">Blackout at the Polar Cap</h3><div class="lvl h" data-i18n="lvl_h">★★★ Hard</div><p data-i18n="m3_p">Almost no sunlight. Which subsystem do we switch off?</p></div></div>
+      <div class="mission"><div class="ico">🌋</div><div><h3 data-i18n="m4_h">The Lava Tube Harvest</h3><div class="lvl" data-i18n="lvl_e">★ Easy</div><p data-i18n="m4_p">Light or energy: alternate high light and darkness to grow food.</p></div></div>
+      <div class="mission"><div class="ico">🌑</div><div><h3 data-i18n="m5_h">Orbital Shadow Effect</h3><div class="lvl m" data-i18n="lvl_m">★★ Medium</div><p data-i18n="m5_p">A very long night: heating or sending data to Earth?</p></div></div>
+      <div class="mission"><div class="ico">🛡️</div><div><h3 data-i18n="m6_h">Thermal Shield Anomaly</h3><div class="lvl h" data-i18n="lvl_h">★★★ Hard</div><p data-i18n="m6_p">A crack opens before a solar storm: seal it or look after the air?</p></div></div>
+      <div class="mission soon"><div class="ico">🔴</div><div><h3 data-i18n="m7_h">Mars base</h3><div class="lvl" data-i18n="lvl_s">Advanced · in preparation</div><p data-i18n="m7_p">The next frontier: the same four systems with brand-new challenges.</p></div></div>
+    </div>
+  </section>
+
+  <!-- DATOS -->
+  <section id="data">
+    <h2 data-i18n="data_h">Real NASA &amp; NOAA data</h2>
+    <p class="lead" data-i18n="data_lead">Every piece of information shows where it comes from.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th data-i18n="th_src">Source</th><th data-i18n="th_label">Label</th><th data-i18n="th_use">What it does in the game</th></tr></thead>
+        <tbody>
+          <tr><td><b>NASA DONKI</b> (CCMC)<br><small data-i18n="d1_s">Flares, CMEs, geomagnetic storms, SEP, WSA-Enlil</small></td><td><span class="pill p-real" data-i18n="l_real">REAL DATA</span> <span class="pill p-hist" data-i18n="l_hist">HISTORICAL DATA</span></td><td data-i18n="d1_u">The latest strong solar event sets the alert level of the solar-storm turn (a simulation parameter).</td></tr>
+          <tr><td><b>NASA GIBS</b><br><small data-i18n="d2_s">MODIS &amp; VIIRS imagery, Black Marble</small></td><td><span class="pill p-real" data-i18n="l_real">REAL DATA</span> <span class="pill p-hist" data-i18n="l_hist">HISTORICAL DATA</span></td><td data-i18n="d2_u">The real Earth in the sky and in “Learn more”.</td></tr>
+          <tr><td><b>NASA LRO · Moon Trek</b><br><small data-i18n="d3_s">Global WAC mosaic of the Moon</small></td><td><span class="pill p-hist" data-i18n="l_hist">HISTORICAL DATA</span></td><td data-i18n="d3_u">The real Moon behind the base.</td></tr>
+          <tr><td><b>NASA Earthdata CMR</b><br><small data-i18n="d4_s">ISS lightning sensor (LIS)</small></td><td><span class="pill p-hist" data-i18n="l_hist">HISTORICAL DATA</span></td><td data-i18n="d4_u">Context in the Space Data Center.</td></tr>
+          <tr><td><b>NOAA SWPC</b><br><small data-i18n="d5_s">Planetary Kp index, space-weather scales</small></td><td><span class="pill p-real" data-i18n="l_real">REAL DATA</span></td><td data-i18n="d5_u">Cross-check of DONKI’s geomagnetic activity.</td></tr>
+          <tr><td><b>NASA ECLSS · Radiation Protection · Moon Base Systems · Veggie</b></td><td><span class="pill p-ref" data-i18n="l_ref">NASA REFERENCE</span></td><td data-i18n="d6_u">Explain what each building does, with a link to the source.</td></tr>
+          <tr><td><b data-i18n="d7_s">Game numbers</b> (SimConfig)</td><td><span class="pill p-sim" data-i18n="l_sim">SIMULATION PARAMETER</span></td><td data-i18n="d7_u">Energy, materials, hours and exposure are game values — not measurements.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note" data-i18n-html="data_note"><strong>We never present a solar-event class as a real radiation dose.</strong> Without internet the game keeps working from the last saved copy; without a copy it uses a clearly labeled <em>educational simulation</em>.</p>
+  </section>
+
+  <!-- GAMEPLAY -->
+  <section id="gameplay">
+    <h2 data-i18n="gp_h">See it in action</h2>
+    <p class="lead" data-i18n="gp_lead">Tap a building, spend your budget, make a decision, survive the alerts.</p>
+    <div class="gallery">
+      <figure><button type="button" data-zoom="assets/img/base.jpg"><span class="shot"><img src="assets/img/base.jpg" loading="lazy" width="1280" height="720" alt="The lunar base with six meters on the left and the greenhouse window on the right"></span></button><figcaption data-i18n="g1">The base: six simple meters and a window for each building.</figcaption></figure>
+      <figure><button type="button" data-zoom="assets/img/decision.jpg"><span class="shot"><img src="assets/img/decision.jpg" loading="lazy" width="1280" height="720" alt="A decision with two illustrated cards showing what you gain and what it costs"></span></button><figcaption data-i18n="g2">Illustrated decisions: compare what you gain ▲ and what it costs ▼.</figcaption></figure>
+      <figure><button type="button" data-zoom="assets/img/alert.jpg"><span class="shot"><img src="assets/img/alert.jpg" loading="lazy" width="1280" height="720" alt="A solar flare alert with a countdown, an animated scene and three answers"></span></button><figcaption data-i18n="g3">Real-time space alerts with a countdown and real consequences.</figcaption></figure>
+      <figure><button type="button" data-zoom="assets/img/tutorial.jpg"><span class="shot"><img src="assets/img/tutorial.jpg" loading="lazy" width="1280" height="720" alt="The robot guide pointing at the shield meter with an arrow"></span></button><figcaption data-i18n="g4">A friendly robot teaches each mission step by step.</figcaption></figure>
+      <figure><button type="button" data-zoom="assets/img/missions.jpg"><span class="shot"><img src="assets/img/missions.jpg" loading="lazy" width="1280" height="720" alt="Mission selection with completed missions marked with stars"></span></button><figcaption data-i18n="g5">Missions unlock in a chain, with stars for each one.</figcaption></figure>
+      <figure><button type="button" data-zoom="assets/img/end.jpg"><span class="shot"><img src="assets/img/end.jpg" loading="lazy" width="1280" height="720" alt="Mission complete screen with three stars, achievements and what we learned"></span></button><figcaption data-i18n="g6">Celebrate, then learn: stars, achievements and “today we learned”.</figcaption></figure>
+    </div>
+    <div class="ctafinal"><a class="btn play" data-game href="https://nasas-8a24c.web.app" target="_blank" rel="noopener"><span aria-hidden="true">▶</span> <span data-i18n="play">Play now</span></a></div>
+  </section>
+
+  <!-- PRESENTACION -->
+  <section id="presentation">
+    <h2 data-i18n="pres_h">Presentation</h2>
+    <p class="lead" data-i18n="pres_lead">Our project in a few minutes.</p>
+    <div id="pres-root"></div>
+  </section>
+
+  <!-- EQUIPO -->
+  <section id="team" hidden>
+    <h2 data-i18n="team_h">Team</h2>
+    <div class="team" id="team-root"></div>
+  </section>
+
+  <!-- CREDITOS -->
+  <section id="credits">
+    <h2 data-i18n="cr_h">Credits &amp; attributions</h2>
+    <p class="credits" data-i18n-html="cr_p">Data: NASA / GSFC / CCMC (DONKI), NASA EOSDIS GIBS, NASA LRO · Moon Trek, NASA EOSDIS / GHRC DAAC, NOAA SWPC. Fonts: Fredoka (SIL OFL 1.1), Twemoji · Mozilla COLR (CC-BY 4.0), DejaVu Sans (Bitstream Vera licence). Built with Godot 4.7.<br><strong>This project is not an official NASA product and is not endorsed by NASA.</strong></p>
+  </section>
+
+</div>
+</main>
+
+<footer><div class="wrap"><span data-i18n="foot">ZYRANTH · Junior Astronaut: Mission Trainer — made for the NASA Space Apps Challenge 2026</span></div></footer>
+
+<dialog id="lightbox"><img alt=""><form method="dialog"><button aria-label="Close">✕</button></form></dialog>
+
+<script>
+/* ============================ CONFIGURACION (editar aqui) ============================ */
+const SITE = {
+  gameUrl: "https://nasas-8a24c.web.app",          // enlace al juego
+  presentation: {
+    slidesEmbed: "",   // Google Slides: https://docs.google.com/presentation/d/ID/embed?start=false&loop=false&delayms=3000
+    videoUrl: "",      // YouTube o Vimeo: https://www.youtube.com/watch?v=ID   (opcional)
+    pdf: "assets/presentation.pdf"   // PDF: copia el archivo como assets/presentation.pdf y escribe aqui "assets/presentation.pdf"
+  },
+  team: [
+    { name: "Dangel Rodríguez", role: "Tempest Space" },
+    { name: "Ángel Noel", role: "Tempest Space" },
+    { name: "Roniel Santos", role: "Tempest Space" },
+    { name: "Meredith Espinal", role: "Tempest Space" }
+  ]
+};
+
+/* ============================ TEXTOS EN / ES ============================ */
+const T = {
+ en: {
+  nav_idea:"The idea", nav_data:"NASA data", nav_play:"Gameplay", nav_pres:"Presentation", nav_team:"Team",
+  eyebrow:"🚀 NASA Space Apps Challenge 2026", play:"Play now", watch:"Watch the presentation",
+  tagline:"Run a base next to the Moon. Four systems, one budget, no perfect answer. An educational space-survival game for kids 7–12, built on real NASA and NOAA open data.",
+  chip1:"👧 Ages 7–12", chip2:"🌐 English · Español", chip3:"🖥 Plays in your browser", chip4:"🛰 Real NASA data",
+  idea_h:"Space survival is all about trade-offs",
+  idea_lead:"On a real mission every improvement costs something else. ZYRANTH lets kids feel that: each mission is an engineering dilemma — something to protect, something to sacrifice.",
+  c1_h:"No perfect answer", c1_p:"Every choice shows what you gain ▲ and what it costs ▼ before you confirm. Kids compare, decide and see the consequences — and losing is always a positive, “here’s what to improve” moment.",
+  c2_h:"Made for 7–12 year olds", c2_p:"Big icons instead of numbers, three-state meters (✓ ⚠ ✗ — never colour alone), a rounded font, a friendly robot guide and a step-by-step tutorial for every mission.",
+  c3_h:"Real data, honest labels", c3_p:"Solar flares, geomagnetic storms and satellite imagery come from NASA and NOAA. Everything is labeled as real, historical, reference or simulation — we never invent data.",
+  sys_h:"Four systems, one budget", sys_lead:"They are connected: improving one always takes energy, materials or crew time from another.",
+  s1_h:"Life support", s1_p:"Oxygen, CO₂ and water. Uses energy and needs maintenance.",
+  s2_h:"Protection", s2_p:"Shielding and a radiation shelter. Uses materials and hours.",
+  s3_h:"Energy", s3_p:"Solar panels (day only), batteries and a backup reserve.",
+  s4_h:"Food", s4_p:"A greenhouse that also helps with air and water. Uses LED light and care.",
+  budget:"They all compete for ⚡ energy · 🧱 materials · ⏱ crew hours",
+  mis_h:"Six missions, six dilemmas", mis_lead:"Missions unlock in a chain. Each has its own rules, risks and tutorial.",
+  lvl_e:"★ Easy", lvl_m:"★★ Medium", lvl_h:"★★★ Hard", lvl_s:"Advanced · in preparation",
+  m1_h:"Lunar Shelter: The Awakening", m1_p:"Four systems, one budget. The tutorial mission.",
+  m2_h:"Storm on the Horizon", m2_p:"Crops or shield: sacrifice the plants’ energy to protect the crew.",
+  m3_h:"Blackout at the Polar Cap", m3_p:"Almost no sunlight. Which subsystem do we switch off?",
+  m4_h:"The Lava Tube Harvest", m4_p:"Light or energy: alternate high light and darkness to grow food.",
+  m5_h:"Orbital Shadow Effect", m5_p:"A very long night: heating or sending data to Earth?",
+  m6_h:"Thermal Shield Anomaly", m6_p:"A crack opens before a solar storm: seal it or look after the air?",
+  m7_h:"Mars base", m7_p:"The next frontier: the same four systems with brand-new challenges.",
+  data_h:"Real NASA & NOAA data", data_lead:"Every piece of information shows where it comes from.",
+  th_src:"Source", th_label:"Label", th_use:"What it does in the game",
+  l_real:"REAL DATA", l_hist:"HISTORICAL DATA", l_ref:"NASA REFERENCE", l_sim:"SIMULATION PARAMETER",
+  d1_s:"Flares, CMEs, geomagnetic storms, SEP, WSA-Enlil", d1_u:"The latest strong solar event sets the alert level of the solar-storm turn (a simulation parameter).",
+  d2_s:"MODIS & VIIRS imagery, Black Marble", d2_u:"The real Earth in the sky and in “Learn more”.",
+  d3_s:"Global WAC mosaic of the Moon", d3_u:"The real Moon behind the base.",
+  d4_s:"ISS lightning sensor (LIS)", d4_u:"Context in the Space Data Center.",
+  d5_s:"Planetary Kp index, space-weather scales", d5_u:"Cross-check of DONKI’s geomagnetic activity.",
+  d6_u:"Explain what each building does, with a link to the source.",
+  d7_s:"Game numbers", d7_u:"Energy, materials, hours and exposure are game values — not measurements.",
+  data_note:"<strong>We never present a solar-event class as a real radiation dose.</strong> Without internet the game keeps working from the last saved copy; without a copy it uses a clearly labeled <em>educational simulation</em>.",
+  gp_h:"See it in action", gp_lead:"Tap a building, spend your budget, make a decision, survive the alerts.",
+  g1:"The base: six simple meters and a window for each building.", g2:"Illustrated decisions: compare what you gain ▲ and what it costs ▼.",
+  g3:"Real-time space alerts with a countdown and real consequences.", g4:"A friendly robot teaches each mission step by step.",
+  g5:"Missions unlock in a chain, with stars for each one.", g6:"Celebrate, then learn: stars, achievements and “today we learned”.",
+  pres_h:"Presentation", pres_lead:"Our project in a few minutes.",
+  pres_soon:"The presentation will be available here soon.", pres_pdf:"Download the presentation (PDF)", pres_slides:"Slides", pres_video:"Video", pres_open:"Open in a new tab",
+  team_h:"Team", cr_h:"Credits & attributions",
+  cr_p:"Data: NASA / GSFC / CCMC (DONKI), NASA EOSDIS GIBS, NASA LRO · Moon Trek, NASA EOSDIS / GHRC DAAC, NOAA SWPC. Fonts: Fredoka (SIL OFL 1.1), Twemoji · Mozilla COLR (CC-BY 4.0), DejaVu Sans (Bitstream Vera licence). Built with Godot 4.7.<br><strong>This project is not an official NASA product and is not endorsed by NASA.</strong>",
+  foot:"ZYRANTH · Junior Astronaut: Mission Trainer — made for the NASA Space Apps Challenge 2026"
+ },
+ es: {
+  nav_idea:"La idea", nav_data:"Datos NASA", nav_play:"El juego", nav_pres:"Presentación", nav_team:"Equipo",
+  eyebrow:"🚀 NASA Space Apps Challenge 2026", play:"Jugar ahora", watch:"Ver la presentación",
+  tagline:"Dirige una base junto a la Luna. Cuatro sistemas, un solo presupuesto, ninguna respuesta perfecta. Un juego educativo de supervivencia espacial para niños de 7 a 12 años, hecho con datos abiertos reales de NASA y NOAA.",
+  chip1:"👧 De 7 a 12 años", chip2:"🌐 English · Español", chip3:"🖥 Se juega en el navegador", chip4:"🛰 Datos reales de NASA",
+  idea_h:"Sobrevivir en el espacio es elegir qué sacrificar",
+  idea_lead:"En una misión real cada mejora le quita algo a otra cosa. ZYRANTH hace que los niños lo sientan: cada misión es un dilema de ingeniería — algo que proteger, algo que sacrificar.",
+  c1_h:"Ninguna respuesta perfecta", c1_p:"Cada decisión muestra lo que ganas ▲ y lo que cuesta ▼ antes de confirmar. Los niños comparan, deciden y ven las consecuencias — y perder siempre es un momento positivo: «esto es lo que debemos mejorar».",
+  c2_h:"Pensado para niños de 7 a 12", c2_p:"Iconos grandes en lugar de números, medidores de tres estados (✓ ⚠ ✗ — nunca solo color), letra redondeada, un robot guía simpático y un tutorial paso a paso en cada misión.",
+  c3_h:"Datos reales, etiquetas honestas", c3_p:"Las llamaradas solares, las tormentas geomagnéticas y las imágenes de satélite vienen de NASA y NOAA. Todo está etiquetado como real, histórico, referencia o simulación — nunca inventamos datos.",
+  sys_h:"Cuatro sistemas, un solo presupuesto", sys_lead:"Están conectados: mejorar uno siempre quita energía, materiales o tiempo de la tripulación a otro.",
+  s1_h:"Soporte vital", s1_p:"Oxígeno, CO₂ y agua. Gasta energía y necesita mantenimiento.",
+  s2_h:"Protección", s2_p:"Blindaje y refugio contra la radiación. Gasta materiales y horas.",
+  s3_h:"Energía", s3_p:"Paneles solares (solo de día), baterías y una reserva de respaldo.",
+  s4_h:"Alimentos", s4_p:"Un invernadero que también ayuda con el aire y el agua. Usa luz LED y cuidados.",
+  budget:"Todos compiten por ⚡ energía · 🧱 materiales · ⏱ horas de la tripulación",
+  mis_h:"Seis misiones, seis dilemas", mis_lead:"Las misiones se desbloquean en cadena. Cada una tiene sus reglas, sus riesgos y su tutorial.",
+  lvl_e:"★ Fácil", lvl_m:"★★ Media", lvl_h:"★★★ Difícil", lvl_s:"Avanzada · en preparación",
+  m1_h:"Refugio Lunar: El Despertar", m1_p:"Cuatro sistemas, un solo presupuesto. La misión tutorial.",
+  m2_h:"Tormenta en el Horizonte", m2_p:"Cultivos o escudo: sacrifica la energía de las plantas para proteger a la tripulación.",
+  m3_h:"Apagón en el Casquete", m3_p:"Casi no llega luz solar. ¿Qué subsistema apagamos?",
+  m4_h:"La Cosecha de los Tubos de Lava", m4_p:"Luz o energía: alterna luz alta y oscuridad para cultivar comida.",
+  m5_h:"Efecto de Sombra Orbital", m5_p:"Una noche larguísima: ¿calefacción o enviar datos a la Tierra?",
+  m6_h:"Anomalía en el Escudo Térmico", m6_p:"Se abre una grieta antes de una tormenta solar: ¿sellarla o cuidar el aire?",
+  m7_h:"Base en Marte", m7_p:"La próxima frontera: los mismos cuatro sistemas con retos nuevos.",
+  data_h:"Datos reales de NASA y NOAA", data_lead:"Cada dato muestra de dónde viene.",
+  th_src:"Fuente", th_label:"Etiqueta", th_use:"Qué hace en el juego",
+  l_real:"DATO REAL", l_hist:"DATO HISTÓRICO", l_ref:"REFERENCIA NASA", l_sim:"PARÁMETRO DE SIMULACIÓN",
+  d1_s:"Llamaradas, CME, tormentas geomagnéticas, SEP, WSA-Enlil", d1_u:"El último evento solar fuerte fija el nivel de alerta del turno de la tormenta solar (un parámetro de simulación).",
+  d2_s:"Imágenes MODIS y VIIRS, Black Marble", d2_u:"La Tierra real en el cielo y en «Aprende más».",
+  d3_s:"Mosaico global WAC de la Luna", d3_u:"La Luna real detrás de la base.",
+  d4_s:"Sensor de rayos de la ISS (LIS)", d4_u:"Contexto en el Space Data Center.",
+  d5_s:"Índice Kp planetario y escalas de clima espacial", d5_u:"Contraste de la actividad geomagnética de DONKI.",
+  d6_u:"Explican qué hace cada edificio, con enlace a la fuente.",
+  d7_s:"Números del juego", d7_u:"Energía, materiales, horas y exposición son valores de juego — no mediciones.",
+  data_note:"<strong>Nunca presentamos la clase de un evento solar como una dosis real de radiación.</strong> Sin internet el juego sigue con la última copia guardada; sin copia usa una <em>simulación educativa</em> claramente rotulada.",
+  gp_h:"Míralo en acción", gp_lead:"Toca un edificio, gasta tu presupuesto, toma una decisión, sobrevive a las alertas.",
+  g1:"La base: seis medidores sencillos y una ventana para cada edificio.", g2:"Decisiones ilustradas: compara lo que ganas ▲ y lo que cuesta ▼.",
+  g3:"Alertas espaciales en tiempo real con cuenta regresiva y consecuencias reales.", g4:"Un robot simpático enseña cada misión paso a paso.",
+  g5:"Las misiones se desbloquean en cadena, con estrellas en cada una.", g6:"Celebra y aprende: estrellas, logros y «hoy aprendimos».",
+  pres_h:"Presentación", pres_lead:"Nuestro proyecto en pocos minutos.",
+  pres_soon:"La presentación estará disponible aquí muy pronto.", pres_pdf:"Descargar la presentación (PDF)", pres_slides:"Diapositivas", pres_video:"Vídeo", pres_open:"Abrir en una pestaña nueva",
+  team_h:"Equipo", cr_h:"Créditos y atribuciones",
+  cr_p:"Datos: NASA / GSFC / CCMC (DONKI), NASA EOSDIS GIBS, NASA LRO · Moon Trek, NASA EOSDIS / GHRC DAAC, NOAA SWPC. Fuentes: Fredoka (SIL OFL 1.1), Twemoji · Mozilla COLR (CC-BY 4.0), DejaVu Sans (licencia Bitstream Vera). Hecho con Godot 4.7.<br><strong>Este proyecto no es un producto oficial de NASA ni está respaldado por NASA.</strong>",
+  foot:"ZYRANTH · Junior Astronaut: Mission Trainer — hecho para el NASA Space Apps Challenge 2026"
+ }
+};
+
+/* ============================ LOGICA ============================ */
+let lang = "en";
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+function applyLang(l) {
+  lang = T[l] ? l : "en";
+  document.documentElement.lang = lang;
+  $$("[data-i18n]").forEach(e => { const v = T[lang][e.dataset.i18n]; if (v !== undefined) e.textContent = v; });
+  $$("[data-i18n-html]").forEach(e => { const v = T[lang][e.dataset.i18nHtml]; if (v !== undefined) e.innerHTML = v; });
+  $$(".lang button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
+  try { localStorage.setItem("zyranth_lang", lang); } catch (e) {}
+  renderPresentation();
+}
+
+/* --- presentacion: diapositivas, video y/o PDF segun lo configurado --- */
+function videoEmbed(url) {
+  if (!url) return "";
+  let m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([\w-]{6,})/);
+  if (m) return "https://www.youtube-nocookie.com/embed/" + m[1];
+  m = url.match(/vimeo\.com\/(\d+)/);
+  return m ? "https://player.vimeo.com/video/" + m[1] : "";
+}
+let pdfExists = null;
+async function checkPdf() {
+  if (pdfExists !== null || !SITE.presentation.pdf) return pdfExists;
+  try { const r = await fetch(SITE.presentation.pdf, { method: "HEAD" }); pdfExists = r.ok && /pdf/i.test(r.headers.get("content-type") || ""); }
+  catch (e) { pdfExists = false; }
+  return pdfExists;
+}
+async function renderPresentation() {
+  const root = $("#pres-root"), P = SITE.presentation, t = T[lang];
+  const parts = [];
+  if (P.slidesEmbed) parts.push(`<div class="pres"><h3>${t.pres_slides}</h3><div class="frame"><iframe src="${P.slidesEmbed}" allowfullscreen loading="lazy" title="${t.pres_slides}"></iframe></div></div>`);
+  const v = videoEmbed(P.videoUrl);
+  if (v) parts.push(`<div class="pres"><h3>${t.pres_video}</h3><div class="frame"><iframe src="${v}" allowfullscreen loading="lazy" title="${t.pres_video}" allow="accelerometer; encrypted-media; picture-in-picture"></iframe></div></div>`);
+  if (await checkPdf()) {
+    parts.push(`<div class="pres"><h3>PDF</h3><div class="frame"><object data="${P.pdf}#view=FitH" type="application/pdf"><p style="padding:20px">${t.pres_open}</p></object></div>
+      <div class="actions"><a class="btn alt" href="${P.pdf}" download>⬇ ${t.pres_pdf}</a><a class="btn ghost" href="${P.pdf}" target="_blank" rel="noopener">↗ ${t.pres_open}</a></div></div>`);
+  }
+  root.innerHTML = parts.length ? parts.join("") : `<div class="pres soon-box"><span class="big" aria-hidden="true">🎬</span>${t.pres_soon}</div>`;
+}
+
+/* --- equipo (solo se muestra si se rellena SITE.team) --- */
+function renderTeam() {
+  if (!SITE.team.length) return;
+  $("#team").hidden = false;
+  $("#team-root").innerHTML = SITE.team.map(m => `<div class="member"><div class="av" aria-hidden="true">🧑‍🚀</div><b>${esc(m.name)}</b><span>${esc(m.role || "")}</span></div>`).join("");
+}
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/* --- enlaces al juego, selector de idioma, ampliar imagenes --- */
+$$("[data-game]").forEach(a => a.href = SITE.gameUrl);
+$$(".lang button").forEach(b => b.addEventListener("click", () => applyLang(b.dataset.lang)));
+const box = $("#lightbox");
+$$("[data-zoom]").forEach(b => b.addEventListener("click", () => { $("img", box).src = b.dataset.zoom; $("img", box).alt = $("img", b).alt; box.showModal(); }));
+box.addEventListener("click", e => { if (e.target === box) box.close(); });
+
+renderTeam();
+let saved = "en"; try { saved = localStorage.getItem("zyranth_lang") || "en"; } catch (e) {}
+applyLang(saved);
+</script>
+</body>
+</html>

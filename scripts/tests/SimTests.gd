@@ -8,6 +8,7 @@ var _pass := 0
 
 
 func _ready() -> void:
+	Lang.set_language("es", false)   # las pruebas comprueban los textos en espanol
 	print("=== PRUEBAS DE SIMULACION: OPERACION REFUGIO LUNAR ===")
 	print("%-34s | tier | %-8s | t | VIDA PROT ENER ALIM | exp | causa" % ["Estrategia", "Resultado"])
 	var results := {}

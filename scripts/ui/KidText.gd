@@ -88,7 +88,7 @@ const IMPROVE := {
 
 ## Primera frase de un texto, recortada a `max_len` caracteres (sin cortar palabras).
 static func short(text: String, max_len: int = 70) -> String:
-	var t := text.strip_edges()
+	var t := Lang.t(text).strip_edges()   # se traduce ANTES de recortar: la primera frase en ingles no esta en el diccionario
 	var cut := t.length()
 	for sep in ["? ", ". ", "! ", "?", "."]:
 		var i := t.find(sep)

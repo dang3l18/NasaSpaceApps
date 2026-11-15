@@ -17,6 +17,7 @@ func _check(c: bool, msg: String) -> void:
 
 
 func _ready() -> void:
+	Lang.set_language("es", false)   # las pruebas comprueban los textos en espanol
 	NASADataManager.simulate_offline = true
 	print("=== PRUEBAS DE ALERTAS ESPACIALES ===")
 	_test_catalog()

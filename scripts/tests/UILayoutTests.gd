@@ -25,6 +25,7 @@ func _new_game() -> Control:
 
 
 func _ready() -> void:
+	Lang.set_language("es", false)   # las pruebas comprueban los textos en espanol
 	NASADataManager.simulate_offline = true
 	print("=== PRUEBAS DE INTERFAZ MOVIBLE ===")
 	var backup := PackedByteArray()

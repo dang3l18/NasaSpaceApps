@@ -38,6 +38,7 @@ func _demo(file: String) -> void:
 
 
 func _ready() -> void:
+	Lang.set_language("es", false)   # las pruebas comprueban los textos en espanol
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--demo="):
 			NasaBridge.event = {}

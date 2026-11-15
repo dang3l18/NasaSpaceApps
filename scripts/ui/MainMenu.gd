@@ -159,6 +159,9 @@ func _build_title() -> void:
 		var b := _btn(str(it[0]), it[2], func() -> void: _show(str(it[1])), 18, 52)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(b)
+	var sw := _lang_switch()
+	sw.position = Vector2(980, 14)
+	s.add_child(sw)
 	var cr := _btn("ℹ", Color("34456b"), func() -> void: _show("credits"), 18, 52)
 	cr.tooltip_text = "Créditos"
 	cr.custom_minimum_size = Vector2(60, 52)
@@ -450,7 +453,7 @@ func _source_line(live: Control, source: String, label: String, retrieved: float
 	row.add_theme_constant_override("separation", 8)
 	live.add_child(row)
 	row.add_child(UI.badge(label, 12))
-	var when := ("consultado %s" % DatasetManager.format_time(retrieved)) if retrieved > 0 else "sin consulta"
+	var when := (Lang.t("consultado %s") % DatasetManager.format_time(retrieved)) if retrieved > 0 else "sin consulta"
 	row.add_child(_lbl("%s · %s · %s" % [source, when, ORIGIN_TEXT.get(origin, origin)], 12, C_MUTED, true, 330))
 
 
@@ -608,7 +611,7 @@ func _build_config() -> void:
 	var h := _lbl("CONFIGURACIÓN", 30, C_GOLD, false)
 	h.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(h)
-	v.add_child(_lbl("Idioma: Español", 17, C_TEXT, false))
+	v.add_child(_lang_switch())
 	v.add_child(_lbl("Fuentes de datos. «Copia vigente» = descargada hace poco, no hace falta pedirla otra vez. Pulsa el botón para consultar la red ahora:", 15, C_MUTED, true))
 	_cfg_status = _lbl("", 13, C_MUTED, true)
 	v.add_child(_btn("↻ Consultar la red ahora", Color("1f6fd0"), _check_connections, 14, 34))
@@ -703,8 +706,6 @@ func _fill_config() -> void:
 		row.add_child(n)
 		row.add_child(_lbl(info[0], 13, info[1], false))
 		_cfg_list.add_child(row)
-	if NASADataManager.using_demo_key:
-		_cfg_list.add_child(_lbl("Aviso: usando la clave de demostración de NASA (límite muy bajo). Define NASA_API_KEY.", 13, Color("ff9d4d"), true))
 
 
 func _build_credits() -> void:
@@ -926,7 +927,7 @@ func _draw_deco() -> void:
 	var bub := Rect2(rp.x - 140, rp.y - 78, 200, 52)
 	d.draw_style_box(UI.box(Color("eaf3ff"), Color("8ec5ff"), 3, 12, 0), bub)
 	d.draw_colored_polygon(PackedVector2Array([Vector2(bub.end.x - 36, bub.end.y - 2), Vector2(bub.end.x - 8, bub.end.y - 2), Vector2(bub.end.x - 20, bub.end.y + 18)]), Color("eaf3ff"))
-	d.draw_string(ThemeDB.fallback_font, Vector2(bub.position.x + 14, bub.position.y + 34), "¡Hola, comandante!", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("15306b"))
+	d.draw_string(ThemeDB.fallback_font, Vector2(bub.position.x + 14, bub.position.y + 34), Lang.t("¡Hola, comandante!"), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("15306b"))
 
 
 func _dome(d: Control, c: Vector2, r: float, col: Color) -> void:
@@ -960,3 +961,20 @@ func _continue_game() -> void:
 				_show("missions")
 				return
 	_show("missions")
+
+
+## Selector de idioma: dos botones (English / Español); el elegido se ve marcado. Al cambiar, se recarga el menu.
+func _lang_switch() -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.add_child(UI.lbl("🌐", 22))
+	for code in Lang.LANGUAGES:
+		var on: bool = Lang.language == code
+		var b := UI.btn(str(Lang.LANGUAGES[code]), Color("28b36a") if on else Color("3b4a80"), func() -> void:
+			if Lang.language != code:
+				Lang.set_language(code)
+				GameSettings.start_screen = "config" if _screens["config"].visible else "title"
+				get_tree().reload_current_scene(), 16, 44)
+		b.custom_minimum_size = Vector2(112, 44)
+		row.add_child(b)
+	return row
